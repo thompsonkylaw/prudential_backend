@@ -3,8 +3,8 @@ FROM python:3.11-slim
 
 # ===== SYSTEM DEPENDENCIES =====
 # Install required system packages
-RUN apt-get update && apt-get install -y \
-    wget \          # For downloading files
+# RUN apt-get update && apt-get install -y \
+#     wget \          # For downloading files
     # unzip \         # For unzipping ChromeDriver
     # gnupg \         # For package verification
     # libnss3 \       # Chrome dependency
