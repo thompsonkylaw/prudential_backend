@@ -9,6 +9,7 @@ import uuid
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import time
 
 app = FastAPI()
 executor = ThreadPoolExecutor(max_workers=5)  # Control concurrency
@@ -46,16 +47,36 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
         
         driver.get(url)
         # Login phase
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.presence_of_element_located((By.ID, 'username'))
-        ).send_keys(username)
-        driver.find_element(By.ID, 'password').send_keys(password)
-        driver.find_element(By.ID, 'login-btn').click()
+        # WebDriverWait(driver, TIMEOUT).until(
+        #     EC.presence_of_element_located((By.ID, 'user'))
+        # ).send_keys(username)
+        login_field = WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.ID, "user"))
+        )
+        login_field.send_keys(username)
+        print("username sent")
         
+        driver.find_element(By.ID, 'password').send_keys(password)
+        print("password sent")
+        
+        #click submit
+        driver.find_element(By.XPATH, '//*[@id="form"]/button').click()
+        print("button clicked")
         # Trigger OTP
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.element_to_be_clickable((By.ID, 'send-otp'))
-        ).click()
+        
+        mailOpion = WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.XPATH, '//*[@id="otp"]/div[1]/div[1]/input'))
+        )
+        mailOpion.click()
+        
+        print("mailOpion clicked")
+        
+        sendOtpRequestButton = WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.XPATH, '//*[@id="otp"]/div[2]/button[1]'))
+        )
+        sendOtpRequestButton.click()
+        print("sendOtpRequestButton clicked")
+        
         
         sessions[session_id] = driver
     except Exception as e:
@@ -66,6 +87,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
 
 @app.post("/login")
 async def initiate_login(request: LoginRequest):
+   
     session_id = str(uuid.uuid4())
     try:
         await run_in_thread(
@@ -86,16 +108,51 @@ def verify_otp_worker(session_id: str, otp: str):
     
     try:
         # Enter OTP
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.presence_of_element_located((By.ID, 'otp'))
-        ).send_keys(otp)
-        driver.find_element(By.ID, 'verify-otp').click()
+        for i in range(6):
+            # Construct the XPath for each pin field (pin_0, pin_1, etc.)
+            pin_xpath = f'//*[@id="pin_{i}"]'
+            
+            # Wait for the pin field to be visible
+            otp_pin = WebDriverWait(driver, TIMEOUT).until(
+                EC.visibility_of_element_located((By.XPATH, pin_xpath))
+            )
+            
+            # Send the corresponding digit to the field
+            otp_pin.send_keys(otp[i])
+            print(f"otp_pin_{otp[i]} entered")
+        
+        time.sleep(1)
+        # otp_pin_0 = WebDriverWait(driver, TIMEOUT).until(
+        #     EC.visibility_of_element_located((By.XPATH, '//*[@id="pin_0"]'))
+        # )
+        
+        # otp_pin_0.send_keys(otp)
+        # print("otp_pin_0 entered")
+        
+        driver.find_element(By.XPATH, '//*[@id="verify"]/div[2]/button[1]').click()
+        print("otp_continual_button clicked")
         
         # Final verification
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.presence_of_element_located((By.XPATH, '//*[contains(text(), "制作建議書")]'))
+        # WebDriverWait(driver, TIMEOUT).until(
+        #     EC.presence_of_element_located((By.XPATH, '//*[contains(text(), "制作建議書")]'))
+        # )
+        
+        
+        proposal_button = WebDriverWait(driver, TIMEOUT).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//button[.//span[text()='製作建議書']]")
+            )
+        )
+        proposal_button.click()
+        print("Proposal button clicked")
+        
+        english_name_field = WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-1"]'))
         )
         
+        print("english_name_field showed")
+        
+
         # Cleanup
         driver.quit()
         sessions.pop(session_id)
