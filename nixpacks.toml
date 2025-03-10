@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["google-chrome", "chromedriver"]
+nixPkgs = ["python39", "python39Packages.pip", "google-chrome", "chromedriver"]
