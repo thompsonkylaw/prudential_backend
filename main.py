@@ -42,7 +42,7 @@ async def run_in_thread(func, *args):
 def selenium_worker(session_id: str, url: str, username: str, password: str):
     try:
         options = webdriver.ChromeOptions()
-        # options.add_argument('--headless')
+        options.add_argument('--headless')
         driver = webdriver.Chrome(options=options)
         
         driver.get(url)
