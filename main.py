@@ -43,7 +43,11 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
     try:
         options = webdriver.ChromeOptions()
         # options.add_argument('--headless')
+        options.add_argument('--headless')           # Run Chrome in headless mode
+        options.add_argument('--no-sandbox')         # Bypass OS security model (required in some server environments)
+        options.add_argument('--disable-dev-shm-usage')  # Overcome limited shared memory issues
         driver = webdriver.Chrome(options=options)
+ 
         
         driver.get(url)
         # Login phase
