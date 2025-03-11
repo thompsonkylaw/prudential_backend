@@ -1,10 +1,19 @@
-ARG PORT=443
-FROM cypress/included:12.9.0
+FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y python3
-RUN echo $(python3 -m site --user-base)
-COPY requirements.txt .
-ENV PATH /home/root/.local/bin:${PATH}
-RUN apt-get update && apt-get install -y python3-pip && pip install -r requirements.txt
-COPY . .
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libstdc++6
+
+WORKDIR /app
+
+COPY requirements.txt ./
+
+RUN pip install -r requirements.txt
+
+COPY . ./
+
+CMD hypercorn main:app --bind [::]:$PORT
