@@ -1,21 +1,25 @@
-# Use a valid base image (make sure to use one that exists, e.g., cypress/included or a proper cypress/browser tag)
 ARG PORT=443
-FROM cypress/browser:latest
+FROM cypress/included:12.9.0
 
-# Install python3 (fixing the install command)
-RUN apt-get update && apt-get install -y python3
+# Fix GPG key issue for Google Chrome
+RUN apt-get update && apt-get install -y wget && \
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
 
-# Add missing Google Chrome public key
-RUN curl -sSL https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
-
-# Remove duplicate Microsoft Edge repository file if not needed
+# Remove duplicate Microsoft Edge repository
 RUN rm -f /etc/apt/sources.list.d/microsoft-edge.list
 
-# Continue with updating and installing pip and requirements
-RUN apt-get update && apt-get install -y python3-pip && pip3 install -r requirements.txt
+# Install Python and dependencies
+RUN apt-get update && apt-get install -y python3 python3-pip
 
-# Copy source files
+# Set up Python environment
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application
 COPY . .
 
-# Run uvicorn (note the correct spelling)
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Run the application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "$PORT"]
