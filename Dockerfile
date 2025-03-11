@@ -16,4 +16,4 @@ RUN pip install -r requirements.txt
 
 COPY . ./
 
-CMD hypercorn main:app --bind [::]:$PORT
+CMD uvicorn main:app --bind [::]:$PORT
