@@ -10,6 +10,9 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
+from selenium.webdriver.common.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
 
 app = FastAPI()
 executor = ThreadPoolExecutor(max_workers=5)  # Control concurrency
@@ -43,10 +46,11 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
     try:
         options = webdriver.ChromeOptions()
         # options.add_argument('--headless')
-        options.add_argument('--headless')           # Run Chrome in headless mode
+        # options.add_argument('--headless')           # Run Chrome in headless mode
         options.add_argument('--no-sandbox')         # Bypass OS security model (required in some server environments)
         options.add_argument('--disable-dev-shm-usage')  # Overcome limited shared memory issues
-        driver = webdriver.Chrome(options=options)
+        # driver = webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()),options=options)
  
         
         driver.get(url)
@@ -155,6 +159,7 @@ def verify_otp_worker(session_id: str, otp: str):
         )
         
         print("english_name_field showed")
+        time.sleep(5)
         
 
         # Cleanup
