@@ -10,7 +10,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
-from selenium.webdriver.common.service import Service
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 
