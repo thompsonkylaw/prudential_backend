@@ -3,7 +3,7 @@ FROM cypress/included:12.9.0
 
 # Fix GPG key issue for Google Chrome
 RUN apt-get update && apt-get install -y wget && \
-    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
+    wget -q -O /etc/apt/trusted.gpg.d/google-linux-signing-key.gpg https://dl.google.com/linux/linux_signing_key.pub
 
 # Remove duplicate Microsoft Edge repository
 RUN rm -f /etc/apt/sources.list.d/microsoft-edge.list
