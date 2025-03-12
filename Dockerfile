@@ -2,21 +2,30 @@ ARG PORT=443
 
 FROM cypress/browsers:latest
 
-# 更新 apt 並安裝必要工具
-RUN apt-get update && apt-get install -y python3 python3-pip
+# Install Python3, Pip3, and common build dependencies in one layer
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    build-essential \
+    libssl-dev \
+    libffi-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# 確保 Python 和 Pip 可用
-RUN python3 --version && pip3 --version
+# Optional: Echo the Python user base directory
+RUN echo $(python3 -m site --user-base)
 
-# 設置 Python 使用者安裝路徑
-ENV PATH /root/.local/bin:${PATH}
+# Copy requirements.txt to the container
+COPY requirements.txt .
 
-# 複製 requirements.txt 並安裝 Python 依賴
-COPY requirements.txt . 
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Set PATH environment variable (may be optional depending on requirements)
+ENV PATH /home/root/.local/bin:${PATH}
 
-# 複製應用程式文件
+# Install Python dependencies
+RUN pip3 install -r requirements.txt
+
+# Copy application code
 COPY . .
 
-# 啟動應用
+# Run the application with Uvicorn
 CMD uvicorn main:app --host 0.0.0.0 --port $PORT
