@@ -1,12 +1,20 @@
 ARG PORT=443
 
-RUN apt-get install python 3 -y
+
+
+FROM cypress/browsers:latest
+
+
+RUN apt-get install python3 -y
+
 RUN echo $(python3 -m site --user-base)
-COPY requirements.txt .
+
+COPY requirements.txt  .
+
 ENV PATH /home/root/.local/bin:${PATH}
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libstdc++6 \
-    pip install -r requirements.txt
+
+RUN  apt-get update && apt-get install -y python3-pip && pip3 install -r requirements.txt  
+
 COPY . .
-CMD vuicorn main:app --host 0.0.0.0 --port $PORT
+
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
