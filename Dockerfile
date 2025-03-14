@@ -1,51 +1,46 @@
-# Use an official Python runtime as base image
-FROM python:3.9-slim
+# Use Python 3.13 base image
+FROM python:3.13-rc-slim-bookworm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
+    libgl1 \
     libx11-6 \
     libxcb1 \
     libxcomposite1 \
+    libxcursor1 \
     libxdamage1 \
     libxext6 \
     libxfixes3 \
-    libxkbcommon0 \
+    libxi6 \
     libxrandr2 \
-    xdg-utils \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
     --no-install-recommends
 
 
-# Set environment variables
-ENV DISPLAY=:99
-ENV PYTHONUNBUFFERED=1
 
-# Set working directory
+# Configure Python environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONPYCACHEPREFIX=/tmp/pycache \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application
 COPY . .
 
-# Expose port
-EXPOSE 8000
+# Railway configuration
+ENV PORT=8000
+EXPOSE $PORT
 
-# Start command
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start command (use uvicorn directly)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}"]
