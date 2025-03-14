@@ -1,32 +1,63 @@
-ARG PORT=443
+# Use an official Python runtime as base image
+FROM python:3.9-slim
 
-FROM cypress/browsers:latest
-
-# Install Python3, Pip3, and dependencies in one layer
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    build-essential \
-    libssl-dev \
-    libffi-dev \
-    python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+    wget \
+    unzip \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    --no-install-recommends
 
-# Create a virtual environment
-RUN python3 -m venv /opt/venv
+# Install Chrome
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb
 
-# Activate the virtual environment by updating PATH
-ENV PATH="/opt/venv/bin:$PATH"
+# Install ChromeDriver
+ARG CHROME_DRIVER_VERSION=114.0.5735.90
+RUN wget -q https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip chromedriver_linux64.zip \
+    && mv chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm chromedriver_linux64.zip
 
-# Copy requirements.txt to the container
+# Set environment variables
+ENV DISPLAY=:99
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
-
-# Install Python dependencies in the virtual environment
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Run the application with Uvicorn
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Expose port
+EXPOSE 8000
+
+# Start command
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
