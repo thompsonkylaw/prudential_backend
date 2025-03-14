@@ -1,63 +1,55 @@
-# Use an official Python runtime as base image
+# Start with a slim Python image
 FROM python:3.9-slim
 
-# Install system dependencies
+# Install system dependencies for Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
+    libnss3 \
+    libgconf-2-4 \
+    libxss1 \
+    libappindicator1 \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
-    libatspi2.0-0 \
-    libcairo2 \
     libcups2 \
     libdbus-1-3 \
     libdrm2 \
     libgbm1 \
     libgtk-3-0 \
     libnspr4 \
-    libnss3 \
-    libx11-6 \
-    libxcb1 \
+    libx11-xcb1 \
     libxcomposite1 \
     libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
-    --no-install-recommends
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome
-RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
-    && rm google-chrome-stable_current_amd64.deb
+# Install Google Chrome
+RUN wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && dpkg -i /tmp/chrome.deb || apt-get install -f -y \
+    && rm /tmp/chrome.deb
 
 # Install ChromeDriver
-ARG CHROME_DRIVER_VERSION=114.0.5735.90
-RUN wget -q https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip \
-    && unzip chromedriver_linux64.zip \
-    && mv chromedriver /usr/bin/chromedriver \
-    && chmod +x /usr/bin/chromedriver \
-    && rm chromedriver_linux64.zip
-
-# Set environment variables
-ENV DISPLAY=:99
-ENV PYTHONUNBUFFERED=1
+RUN CHROMEDRIVER_VERSION=$(wget -q -O - https://chromedriver.storage.googleapis.com/LATEST_RELEASE) \
+    && wget -q -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
+    && rm /tmp/chromedriver.zip \
+    && chmod +x /usr/local/bin/chromedriver
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy your application code
 COPY . .
 
-# Expose port
-EXPOSE 8000
+# Expose the port (Railway uses $PORT)
+EXPOSE $PORT
 
-# Start command
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the FastAPI app with Uvicorn
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
