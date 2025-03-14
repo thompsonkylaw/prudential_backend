@@ -1,55 +1,46 @@
-# Start with a slim Python image
-FROM python:3.9-slim
+# Use Python 3.13 base image
+FROM python:3.13-rc-slim-bookworm
 
-# Install system dependencies for Chrome
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
-    libnss3 \
-    libgconf-2-4 \
-    libxss1 \
-    libappindicator1 \
     fonts-liberation \
-    libasound2 \
     libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
     libdrm2 \
     libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
+    libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+    --no-install-recommends
 
-# Install Google Chrome
-RUN wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && dpkg -i /tmp/chrome.deb || apt-get install -f -y \
-    && rm /tmp/chrome.deb
+# Install modern Chrome
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb
 
-# Install ChromeDriver
-RUN CHROMEDRIVER_VERSION=$(wget -q -O - https://chromedriver.storage.googleapis.com/LATEST_RELEASE) \
-    && wget -q -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
-    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
-    && rm /tmp/chromedriver.zip \
-    && chmod +x /usr/local/bin/chromedriver
+# Install matching ChromeDriver
+ARG CHROME_MAJOR_VERSION=126
+RUN CHROME_DRIVER_VERSION=$(wget -qO- https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_MAJOR_VERSION) \
+    && wget -q https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip chromedriver_linux64.zip \
+    && mv chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm chromedriver_linux64.zip
 
-# Set working directory
+# Python specific settings
+ENV PYTHONPYCACHEPREFIX=/tmp/pycache
+ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Copy and install Python dependencies
+# Install dependencies first for caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your application code
+# Copy application
 COPY . .
 
-# Expose the port (Railway uses $PORT)
+# Railway specific configuration
+ENV PORT=8000
 EXPOSE $PORT
-
-# Run the FastAPI app with Uvicorn
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}"]
