@@ -1,55 +1,57 @@
-# Use Python 3.10 slim as the base image for compatibility and reduced size
-FROM python:3.10-slim
+# Use Python 3.12 base for stability
+FROM python:3.12-slim-bookworm
 
-# Install system dependencies required for Chrome and Selenium
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
-    libnss3 \
-    libgconf-2-4 \
-    libxss1 \
-    libappindicator1 \
+    gnupg \
     fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libx11-xcb1 \
+    libgl1 \
+    libx11-6 \
+    libxcb1 \
     libxcomposite1 \
+    libxcursor1 \
     libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
     libxrandr2 \
-    xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    --no-install-recommends
 
-# Install Google Chrome stable version
-RUN wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && dpkg -i /tmp/chrome.deb || apt-get install -f -y \
-    && rm /tmp/chrome.deb
+# Install Chrome
+RUN wget -q https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_124.0.6367.91-1_amd64.deb \
+    && apt-get install -y ./google-chrome-stable_124.0.6367.91-1_amd64.deb \
+    && rm google-chrome-stable_124.0.6367.91-1_amd64.deb
 
-# Install the latest ChromeDriver compatible with the installed Chrome
-RUN CHROMEDRIVER_VERSION=$(wget -q -O - https://chromedriver.storage.googleapis.com/LATEST_RELEASE) \
-    && wget -q -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
-    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
-    && rm /tmp/chromedriver.zip \
-    && chmod +x /usr/local/bin/chromedriver
+# Install matching ChromeDriver
+RUN CHROME_DRIVER_VERSION=124.0.6367.91 \
+    && wget -q https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip chromedriver_linux64.zip \
+    && mv chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm chromedriver_linux64.zip
 
-# Set the working directory for the application
+# Configure Python environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /app
 
-# Copy the requirements file and install Python dependencies
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire application code into the container
+# Copy application
 COPY . .
 
-# Expose the port dynamically assigned by the environment (e.g., Railway's $PORT)
+# Railway configuration
+ENV PORT=8000
 EXPOSE $PORT
 
-# Run the FastAPI application with Uvicorn, binding to the assigned port
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
+# Start command
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}"]
