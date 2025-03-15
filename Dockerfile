@@ -24,12 +24,9 @@ RUN apt-get update && apt-get install -y \
 
 
 # Configure Python environment
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONFAULTHANDLER=1 \
-    PYTHONPYCACHEPREFIX=/tmp/pycache \
-    PIP_NO_CACHE_DIR=1
 
-WORKDIR /app
+
+# WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
