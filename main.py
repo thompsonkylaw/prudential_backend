@@ -177,7 +177,7 @@ def verify_otp_worker(session_id: str, otp: str):
        
         # Cleanup
         driver.quit()
-         sessions.pop(session_id).quit()
+        sessions.pop(session_id).quit()
     except Exception as e:
         driver.quit()
         sessions.pop(session_id, None)
