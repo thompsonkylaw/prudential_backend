@@ -171,6 +171,7 @@ def verify_otp_worker(session_id: str, otp: str):
         )
         
         print("english_name_field showed")
+        sessions.pop("english_name_field showed")
         time.sleep(5)
         
 
