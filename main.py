@@ -46,13 +46,20 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
     try:
         options = webdriver.ChromeOptions()
         # options.add_argument('--headless')
-        options.add_argument('--headless')           # Run Chrome in headless mode
-        options.add_argument('--no-sandbox')         # Bypass OS security model (required in some server environments)
-        options.add_argument('--disable-dev-shm-usage')  # Overcome limited shared memory issues
+        
+        # Run Chrome in headless mode
+        # options.add_argument('--no-sandbox')         # Bypass OS security model (required in some server environments)
+        # options.add_argument('--disable-dev-shm-usage')  # Overcome limited shared memory issues
+        # options.add_argument("--disable-gpu")
+        
         # driver = webdriver.Chrome(options=options)
-        driver = webdriver.Remote(options=options)
-        options.add_argument("--disable-gpu")
+         
         # driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()),options=options)
+        # driver = webdriver.Remote(command_executor='http://212.192.15.100:45678',options=options) #machine1
+        # driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app:4444',options=options) #machine1
+        driver = webdriver.Remote(command_executor='https://selenium-hub-production-2ffc.up.railway.app:4444',options=options) #machine1
+        
+        
  
         
         driver.get(url)
