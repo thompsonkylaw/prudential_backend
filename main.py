@@ -15,7 +15,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 app = FastAPI()
-executor = ThreadPoolExecutor(max_workers=5)  # Control concurrency
+executor = ThreadPoolExecutor(max_workers=1)  # Control concurrency
 
 # Configure CORS
 app.add_middleware(
@@ -171,7 +171,7 @@ def verify_otp_worker(session_id: str, otp: str):
         )
         
         print("english_name_field showed")
-        sessions.pop("english_name_field showed")
+        
         time.sleep(5)
         
 
