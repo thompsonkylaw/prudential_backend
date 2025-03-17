@@ -18,4 +18,5 @@ ENV PORT=8000
 EXPOSE $PORT
 
 # Start command (use uvicorn directly)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}"]
+# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}"]
+CMD hypercorn main:app --bind 0.0.0.0:$PORT
