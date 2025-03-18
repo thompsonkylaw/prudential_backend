@@ -15,7 +15,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 app = FastAPI()
-executor = ThreadPoolExecutor(max_workers=1)  # Control concurrency
+executor = ThreadPoolExecutor(max_workers=5)  # Control concurrency
 
 # Configure CORS
 app.add_middleware(
@@ -99,7 +99,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
         
         
         sessions[session_id] = driver
-        sessions.pop(session_id).quit()
+        # sessions.pop(session_id).quit()########################################
     except Exception as e:
         logging.error(f"Selenium error: {str(e)}")
         if session_id in sessions:
