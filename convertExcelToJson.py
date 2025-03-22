@@ -3,7 +3,7 @@ import json
 import numpy as np  # Needed for type checking
 
 # Load the Excel file
-file_path = 'plans/2025/manulife/tables/Smart_2025.xlsx'
+file_path = 'plans/2025/manulife/tables/Advance_2025.xlsx'
 df = pd.read_excel(file_path)
 
 # Initialize the JSON structure

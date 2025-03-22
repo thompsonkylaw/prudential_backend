@@ -38,7 +38,8 @@ def get_value_from_json(json_file):
         # Get and display the value
         value = data[deductible][age]
         print(f"Value for age {age} and deductible {deductible}: {value}")
+        
 
 if __name__ == "__main__":
-    json_file = os.path.join("plans", "2025", "manulife", "Smart_2025.json")
+    json_file = os.path.join("plans", "2025", "manulife", "Advance_2025.json")
     get_value_from_json(json_file)

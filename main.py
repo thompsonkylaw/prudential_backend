@@ -1,3 +1,4 @@
+# uvicorn main:app --reload
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from selenium import webdriver
@@ -12,7 +13,10 @@ import logging
 import time
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import json
+import os
 
+from typing import List, Dict
 
 app = FastAPI()
 executor = ThreadPoolExecutor(max_workers=5)  # Control concurrency
@@ -198,4 +202,67 @@ async def verify_otp(request: OtpRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-    
+
+class CalculationRequest(BaseModel):
+    year: str
+    plan: str
+    age: int
+    deductible: int
+    numberOfYears: int
+
+class OutputData(BaseModel):
+    yearNumber: int
+    age: int
+    medicalPremium: float
+
+@app.post("/getData", response_model=List[OutputData])
+async def get_data(request: CalculationRequest):
+    try:
+        # Construct file path
+        json_file = os.path.join(
+            "plans",
+            request.year,
+            "manulife",
+            f"{request.plan}_{request.year}.json"
+        )
+
+        # Load JSON data
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+
+        # Calculate maximum years until age 100
+        max_age = 100
+        max_years = max(max_age - request.age + 1, 1)  # Ensure at least 1 year
+        
+        # Generate output data
+        result = []
+        for year in range(1, max_years + 1):
+            current_age = request.age + year - 1
+            
+            # Validate age exists in data
+            if str(current_age) not in data[str(request.deductible)]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Premium data not found for age {current_age}"
+                )
+                
+            result.append({
+                "yearNumber": year,
+                "age": current_age,
+                "medicalPremium": data[str(request.deductible)][str(current_age)]
+            })
+
+        return result
+
+    except FileNotFoundError:
+        logging.error(f"JSON file not found: {json_file}")
+        raise HTTPException(status_code=404, detail="Plan data not found")
+    except KeyError as e:
+        logging.error(f"Invalid key: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
+    except json.JSONDecodeError:
+        logging.error(f"Invalid JSON format in file: {json_file}")
+        raise HTTPException(status_code=500, detail="Invalid data format")
+    except Exception as e:
+        logging.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")    
