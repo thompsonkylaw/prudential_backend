@@ -250,6 +250,7 @@ async def get_data(request: CalculationRequest):
                 "yearNumber": year,
                 "age": current_age,
                 "medicalPremium": data[str(request.deductible)][str(current_age)]
+                
             })
 
         return result
