@@ -125,6 +125,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
         
+        
         driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
         driver.get(url)
         
