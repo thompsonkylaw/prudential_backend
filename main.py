@@ -299,7 +299,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         raise ValueError("Invalid session ID")
     
     try:
-        otp = otp.trim();
+        otp = otp.strip() 
         for i in range(6):
             pin_xpath = f'//*[@id="pin_{i}"]'
             otp_pin = WebDriverWait(driver, TIMEOUT).until(
