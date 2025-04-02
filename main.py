@@ -81,7 +81,7 @@ class RetryRequest(BaseModel):
 
 # Global session storage and timeout
 sessions = {}
-TIMEOUT = 300
+TIMEOUT = 30
 
 # Helper function to run synchronous tasks in a thread
 async def run_in_thread(func, *args):
