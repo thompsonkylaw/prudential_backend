@@ -1,4 +1,4 @@
-#Server v2
+#Server v3
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag (set this based on your deployment environment)
-IsProduction = True  # Set to False for development, True for production
+IsProduction = False  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -581,7 +581,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             print("補充利益說明 page clicked")
         
         you_hope_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@value='yes']/ancestor::div[contains(@class, 'mdc-radio')]"))
+            # EC.element_to_be_clickable((By.XPATH, "//input[@value='yes']/ancestor::div[contains(@class, 'mdc-radio')]"))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '是')]"))
         )
         you_hope_field.click()
         if IsProduction:
@@ -590,7 +591,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             print("提取說明 clicked")
         
         withdrawalPeriod_option_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']/ancestor::div[contains(@class, 'mdc-radio')]"))
+            # EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']/ancestor::div[contains(@class, 'mdc-radio')]"))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '指定提取金額')]"))
         )
         withdrawalPeriod_option_field.click()
         if IsProduction:
@@ -599,7 +601,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             print("指定提取金額 clicked")
         
         withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@value='year']/ancestor::div[contains(@class, 'mdc-radio')]"))
+            # EC.element_to_be_clickable((By.XPATH, "//input[@value='year']/ancestor::div[contains(@class, 'mdc-radio')]"))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保單年度')]"))打打
         )
         withdraw_start_from.click()
         if IsProduction:
