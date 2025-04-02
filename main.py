@@ -592,7 +592,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         
         withdrawalPeriod_option_field = WebDriverWait(driver, TIMEOUT).until(
             # EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']/ancestor::div[contains(@class, 'mdc-radio')]"))
-            EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[.//span[text()='指定提取金額']]"))
+            EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']"))
         )
         withdrawalPeriod_option_field.click()
         if IsProduction:
