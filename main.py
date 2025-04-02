@@ -284,8 +284,8 @@ def perform_checkout(driver, notional_amount: str):
                 else:
                     print("列印建議書2 button clicked successfully")
 
-            temp_dir = "temp"
-            os.makedirs(temp_dir, exist_ok=True)
+            temp_dir = tempfile.mkdtemp()
+            # os.makedirs(temp_dir, exist_ok=True)
             pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
             time.sleep(15)  # Wait for download (adjust as needed)
             return {"status": "success", "pdf_link": f"/{pdf_path}"}
