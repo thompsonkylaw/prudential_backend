@@ -602,7 +602,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         
         withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
             # EC.element_to_be_clickable((By.XPATH, "//input[@value='year']/ancestor::div[contains(@class, 'mdc-radio')]"))
-            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保單年度')]"))打打
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保單年度')]"))
         )
         withdraw_start_from.click()
         if IsProduction:
