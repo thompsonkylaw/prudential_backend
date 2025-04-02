@@ -21,6 +21,7 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
 from selenium.common.exceptions import ElementClickInterceptedException
+import tempfile
 
 # Set up logging
 logging.basicConfig(
@@ -95,10 +96,21 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
         options = webdriver.ChromeOptions()
         if IsProduction:
             options.add_argument('--headless')
+            temp_dir = tempfile.mkdtemp()
+            prefs = {
+                "download.default_directory": temp_dir,
+                "download.prompt_for_download": False,
+                "plugins.always_open_pdf_externally": True
+            }
+            options = webdriver.ChromeOptions()
+            options.add_experimental_option("prefs", prefs)
+            
+            
         
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
+        
         
         if IsProduction:
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
@@ -287,6 +299,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         raise ValueError("Invalid session ID")
     
     try:
+        otp = otp.trim();
         for i in range(6):
             pin_xpath = f'//*[@id="pin_{i}"]'
             otp_pin = WebDriverWait(driver, TIMEOUT).until(
