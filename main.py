@@ -20,6 +20,7 @@ from typing import List, Dict, Optional
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
+from selenium.common.exceptions import ElementClickInterceptedException
 
 # Set up logging
 logging.basicConfig(
@@ -29,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag (set this based on your deployment environment)
-IsProduction = True  # Set to False for development, True for production
+IsProduction = False  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -589,16 +590,54 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             logger.info("提取說明 clicked")
         else:
             print("提取說明 clicked")
+            
+        xpath = "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"
+
+        try:
+            # Wait for the element to be present in the DOM
+            element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, xpath))
+            )
+            
+            # Scroll the element into view to ensure visibility
+            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            
+            # Wait until the element is clickable
+            WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, xpath))
+            )
+            
+            # Attempt to click the element
+            element.click()
+            if IsProduction:
+                logger.info("指定提取金額1 clicked")
+            else:
+                print("指定提取金額1 clicked")
+
+        except ElementClickInterceptedException:
+            # If the click is intercepted, use JavaScript to click instead
+            try:
+                if IsProduction:
+                    print("Click intercepted, attempting JavaScript click...")
+                else:
+                    print("Click intercepted, attempting JavaScript click...")
+                    
+                driver.execute_script("arguments[0].click();", element)    
+            except ElementClickInterceptedException:   
+                if IsProduction:
+                    logger.info("JS Click failed clicked")
+                else:
+                    print("JS Click failed clicked") 
         
-        withdrawalPeriod_option_field = WebDriverWait(driver, TIMEOUT).until(
-            # EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']/ancestor::div[contains(@class, 'mdc-radio')]"))
-            EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"))
-        )
-        withdrawalPeriod_option_field.click()
-        if IsProduction:
-            logger.info("指定提取金額 clicked")
-        else:
-            print("指定提取金額 clicked")
+        # withdrawalPeriod_option_field = WebDriverWait(driver, TIMEOUT).until(
+        #     # EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']/ancestor::div[contains(@class, 'mdc-radio')]"))
+        #     EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"))
+        # )
+        # withdrawalPeriod_option_field.click()
+        # if IsProduction:
+        #     logger.info("指定提取金額 clicked")
+        # else:
+        #     print("指定提取金額 clicked")
         
         withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
             # EC.element_to_be_clickable((By.XPATH, "//input[@value='year']/ancestor::div[contains(@class, 'mdc-radio')]"))
