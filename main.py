@@ -31,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag (set this based on your deployment environment)
-IsProduction = True  # Set to False for development, True for production
+IsProduction = False  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -100,7 +100,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
             prefs = {
                 "download.default_directory": temp_dir,
                 "download.prompt_for_download": False,
-                "plugins.always_open_pdf_externally": True
+                "plugins.always_open_pdf_externally": False
             }
             options = webdriver.ChromeOptions()
             options.add_experimental_option("prefs", prefs)
