@@ -1,5 +1,3 @@
-#Server 5
-
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from selenium import webdriver
@@ -22,6 +20,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
 from selenium.common.exceptions import ElementClickInterceptedException
 import tempfile
+from zoneinfo import ZoneInfo  # Built-in for Python ≥3.9
 
 # Set up logging
 logging.basicConfig(
@@ -70,6 +69,7 @@ class FormData(BaseModel):
     notionalAmount: str
     premiumPaymentMethod: str
     useInflation: bool
+    proposalLanguage: str
 
 class OtpRequest(BaseModel):
     session_id: str
@@ -102,15 +102,11 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
                 "download.prompt_for_download": False,
                 "plugins.always_open_pdf_externally": False
             }
-            options = webdriver.ChromeOptions()
             options.add_experimental_option("prefs", prefs)
-            
-            
         
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-        
         
         if IsProduction:
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
@@ -158,18 +154,19 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
         else:
             print("sendOtpRequestButton clicked")
         
-        sessions[session_id] = driver
+        # Store driver in session as a dictionary
+        sessions[session_id] = {"driver": driver}
     except Exception as e:
         if IsProduction:
             logger.error(f"Selenium error: {str(e)}")
         else:
             logging.error(f"Selenium error: {str(e)}")
         if session_id in sessions:
-            sessions.pop(session_id).quit()
+            sessions.pop(session_id)["driver"].quit()
         raise
 
 # Helper function to perform checkout and handle outcomes
-def perform_checkout(driver, notional_amount: str):
+def perform_checkout(driver, notional_amount: str, form_data: Dict):
     """Performs checkout and returns success with PDF link or retry with system message."""
     policy_field = WebDriverWait(driver, 30).until(
         EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
@@ -229,7 +226,8 @@ def perform_checkout(driver, notional_amount: str):
             save_input_field = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//input[@matinput and @maxlength='80']"))
             )
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            tz_gmt8 = ZoneInfo("Asia/Shanghai")
+            timestamp = datetime.now(tz_gmt8).strftime("%Y%m%d%H%M")
             filename = f"宏摯傳承保障計劃_{timestamp}"
             save_input_field.clear()
             save_input_field.send_keys(filename)
@@ -249,15 +247,35 @@ def perform_checkout(driver, notional_amount: str):
                     logger.info("儲存2 button successfully clicked")
                 else:
                     print("儲存2 button successfully clicked")
-
-            SimpleChinese_radio = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//input[@value='sc']/ancestor::div[contains(@class, 'mdc-radio')]"))
-            )
-            SimpleChinese_radio.click()
-            if IsProduction:
-                logger.info("SimpleChinese_radio checked")
+                    
+            # Corrected proposalLanguage selection
+            if str(form_data['proposalLanguage']) == "zh":
+                proposal_language_radio = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
+                )
+                proposal_language_radio.click()
+                if IsProduction:
+                    logger.info("proposalLanguage_radio = zh")
+                else:
+                    print("proposalLanguage_radio = zh")
+            elif str(form_data['proposalLanguage']) == "sc":
+                proposal_language_radio = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@value='sc']/ancestor::div[contains(@class, 'mdc-radio')]"))
+                )
+                proposal_language_radio.click()
+                if IsProduction:
+                    logger.info("proposalLanguage_radio = sc")
+                else:
+                    print("proposalLanguage_radio = sc")
             else:
-                print("SimpleChinese_radio checked")
+                proposal_language_radio = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
+                )
+                proposal_language_radio.click()
+                if IsProduction:
+                    logger.info("proposalLanguage_radio = zh (default)")
+                else:
+                    print("proposalLanguage_radio = zh (default)")
 
             label = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//label[.//div[text()='所有年期']]"))
@@ -285,7 +303,6 @@ def perform_checkout(driver, notional_amount: str):
                     print("列印建議書2 button clicked successfully")
 
             temp_dir = tempfile.mkdtemp()
-            # os.makedirs(temp_dir, exist_ok=True)
             pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
             time.sleep(15)  # Wait for download (adjust as needed)
             return {"status": "success", "pdf_link": f"/{pdf_path}"}
@@ -294,9 +311,13 @@ def perform_checkout(driver, notional_amount: str):
 
 # Worker to verify OTP and fill form
 def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict):
-    driver = sessions.get(session_id)
-    if not driver:
+    session_data = sessions.get(session_id)
+    if not session_data or "driver" not in session_data:
         raise ValueError("Invalid session ID")
+    driver = session_data["driver"]
+    
+    # Store form_data in the session
+    session_data["form_data"] = form_data
     
     try:
         otp = otp.strip() 
@@ -595,7 +616,6 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             print("補充利益說明 page clicked")
         
         you_hope_field = WebDriverWait(driver, TIMEOUT).until(
-            # EC.element_to_be_clickable((By.XPATH, "//input[@value='yes']/ancestor::div[contains(@class, 'mdc-radio')]"))
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '是')]"))
         )
         you_hope_field.click()
@@ -607,34 +627,24 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         xpath = "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"
 
         try:
-            # Wait for the element to be present in the DOM
             element = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, xpath))
             )
-            
-            # Scroll the element into view to ensure visibility
             driver.execute_script("arguments[0].scrollIntoView(true);", element)
-            
-            # Wait until the element is clickable
             WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, xpath))
             )
-            
-            # Attempt to click the element
             element.click()
             if IsProduction:
                 logger.info("指定提取金額1 clicked")
             else:
                 print("指定提取金額1 clicked")
-
         except ElementClickInterceptedException:
-            # If the click is intercepted, use JavaScript to click instead
             try:
                 if IsProduction:
                     print("Click intercepted, attempting JavaScript click...")
                 else:
                     print("Click intercepted, attempting JavaScript click...")
-                    
                 driver.execute_script("arguments[0].click();", element)    
             except ElementClickInterceptedException:   
                 if IsProduction:
@@ -642,18 +652,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 else:
                     print("JS Click failed clicked") 
         
-        # withdrawalPeriod_option_field = WebDriverWait(driver, TIMEOUT).until(
-        #     # EC.element_to_be_clickable((By.XPATH, "//input[@value='fixedamount']/ancestor::div[contains(@class, 'mdc-radio')]"))
-        #     EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"))
-        # )
-        # withdrawalPeriod_option_field.click()
-        # if IsProduction:
-        #     logger.info("指定提取金額 clicked")
-        # else:
-        #     print("指定提取金額 clicked")
-        
         withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
-            # EC.element_to_be_clickable((By.XPATH, "//input[@value='year']/ancestor::div[contains(@class, 'mdc-radio')]"))
             EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='請選擇您的提取款項由']]/following-sibling::mat-radio-group//label[.//span[text()='保單年度']]"))
         )
         withdraw_start_from.click()
@@ -777,7 +776,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 else:
                     print(f"Filled year {entry['yearNumber']} ({premium}) in field {input_index}")
 
-        result = perform_checkout(driver, form_data['notionalAmount'])
+        result = perform_checkout(driver, form_data['notionalAmount'], form_data)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
@@ -790,9 +789,11 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
 
 # Worker to retry with a new notional amount
 def retry_notional_worker(session_id: str, new_notional_amount: str):
-    driver = sessions.get(session_id)
-    if not driver:
+    session_data = sessions.get(session_id)
+    if not session_data or "driver" not in session_data or "form_data" not in session_data:
         raise ValueError("Invalid session ID")
+    driver = session_data["driver"]
+    form_data = session_data["form_data"]
     
     try:
         basicPlan_field = WebDriverWait(driver, TIMEOUT).until(
@@ -814,7 +815,7 @@ def retry_notional_worker(session_id: str, new_notional_amount: str):
         else:
             print("New notional amount filled")
 
-        result = perform_checkout(driver, new_notional_amount)
+        result = perform_checkout(driver, new_notional_amount, form_data)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
