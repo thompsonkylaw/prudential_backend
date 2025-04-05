@@ -30,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag (set this based on your deployment environment)
-IsProduction = True  # Set to False for development, True for production
+IsProduction = False  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -61,7 +61,7 @@ class FormData(BaseModel):
     surname: str
     givenName: str
     chineseName: str
-    dob: str
+    insuranceAge: str
     gender: str
     isSmoker: bool
     basicPlan: str
@@ -115,6 +115,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
              
         driver.get(url)
         
+        #login field
         login_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.ID, "user"))
         )
@@ -124,20 +125,23 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
         else:
             print("username sent")
         
+        #password_field
         driver.find_element(By.ID, 'password').send_keys(password)
         if IsProduction:
             logger.info("password sent")
         else:
             print("password sent")
         
+        #login button
         driver.find_element(By.XPATH, '//*[@id="form"]/button').click()
         if IsProduction:
             logger.info("button clicked")
         else:
-            print("button clicked")
+            print("login button clicked")
         
+        #已登記的電郵地址
         mailOption = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="otp"]/div[1]/div[1]/input'))
+            EC.visibility_of_element_located((By.XPATH, "//label[contains(., '已登記的電郵地址')]"))
         )
         mailOption.click()
         if IsProduction:
@@ -311,6 +315,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict):
 
 # Worker to verify OTP and fill form
 def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict):
+   
     session_data = sessions.get(session_id)
     if not session_data or "driver" not in session_data:
         raise ValueError("Invalid session ID")
@@ -332,11 +337,16 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             else:
                 print(f"otp_pin_{otp[i]} entered")
         
-        driver.find_element(By.XPATH, '//*[@id="verify"]/div[2]/button[1]').click()
+        otp_continual_button = WebDriverWait(driver, TIMEOUT).until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@id="verify"]/div[2]/button[1]'))
+        )
+        otp_continual_button.click()
+        
+        # driver.find_element(By.XPATH, '//*[@id="verify"]/div[2]/button[1]').click()
         if IsProduction:
-            logger.info("otp_continual_button clicked")
+            logger.info("繼續 clicked")
         else:
-            print("otp_continual_button clicked")
+            print("繼續 clicked")
         
         proposal_button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//button[.//span[text()='製作建議書']]"))
@@ -375,9 +385,12 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 logger.info("isPolicyHolder is false")
             else:
                 print("isPolicyHolder is false")
-
+                
+                
+        #英文姓氏
         sureName_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-1"]'))
+            # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-1"]'))
+            EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "英文姓氏")]]//input'))
         )
         sureName_field.clear()
         sureName_field.send_keys(str(form_data['surname']))
@@ -385,9 +398,12 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             logger.info("Surname field filled")
         else:
             print("Surname field filled")
-        
+        #英文名字
         givenName_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-2"]'))
+            # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-2"]'))
+            EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "英文名字")]]//input'))
+            
+            
         )
         givenName_field.clear()
         givenName_field.send_keys(str(form_data['givenName']))
@@ -395,10 +411,12 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             logger.info("Given givenName field filled")
         else:
             print("Given givenName field filled")
-        
+        #中文姓名
         if form_data['chineseName']:
             chineseName_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-3"]'))
+                # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-3"]'))
+                
+                EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "中文姓名")]]//input'))
             )
             chineseName_field.clear()
             chineseName_field.send_keys(str(form_data['chineseName']))
@@ -407,47 +425,41 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             else:
                 print("chineseName_field filled")
         
-        if form_data['dob']:
-            dob_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-4"]'))
-            )
-            dob_field.clear()
-            dob_field.send_keys(str(form_data['dob']))
-            if IsProduction:
-                logger.info("dob_field field filled")
-            else:
-                print("dob_field field filled")
-
+        
+        #投保年齡
         age_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-input-5"]'))
+            EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "投保年齡")]]//input'))
         )
         age_field.clear()
-        age_field.send_keys(str(calculation_data['inputs'].get('age', '')))
+        age_field.send_keys(str(form_data['insuranceAge']))
         if IsProduction:
-            logger.info("Age field filled")
+            logger.info("insuranceAge field filled")
         else:
-            print("Age field filled")
+            print("insuranceAge field filled")
         
+        #性別
         if "Female" in form_data['gender']:
             gender_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.visibility_of_element_located((By.ID, 'mat-radio-3'))
+                EC.visibility_of_element_located((By.XPATH, "//mat-radio-button[@value='Female']"))
             )
             gender_field.click()
             if IsProduction:
                 logger.info("gender_field Female clicked")
             else:
                 print("gender_field Female clicked")
-        
+        #吸煙習慣打
         if form_data['isSmoker']:
             isSmoker_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.element_to_be_clickable((By.XPATH, "//mat-radio-button[.//input[@id='mat-radio-11-input']]"))
+                EC.element_to_be_clickable((By.XPATH, "//mat-radio-button[@value='Yes']"))
             )
             isSmoker_field.click()
             if IsProduction:
                 logger.info("isSmoker_field yes clicked")
             else:
                 print("isSmoker_field yes clicked")
+                
         
+        #基本計劃page
         basicPlan_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[2]/span[2]/div'))
         )
@@ -456,34 +468,50 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             logger.info("基本計劃page clicked")
         else:
             print("基本計劃page clicked")
-        
+            
+        #基本計劃 Dropdown
         basicPlan_select_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-select-value-5"]'))
+            # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-select-value-5"]'))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '基本計劃')]/following-sibling::mat-form-field//mat-select"))
+            
         )
-        basicPlan_select_field.click()
-        if IsProduction:
-            logger.info("基本計劃 Select clicked")
-        else:
-            print("基本計劃 Select clicked")
+        # basicPlan_select_field.click()
+        driver.execute_script("arguments[0].click();", basicPlan_select_field)
         
+        if IsProduction:
+            logger.info("基本計劃 Dropdown clicked")
+        else:
+            print("基本計劃 Dropdown clicked")
+        
+       
+        #基本計劃 GS
         if 'GS' in str(form_data['basicPlan']):
+            
             basicPlan_option_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-option-14"]/span'))
+                # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-option-14"]/span'))
+                # EC.element_to_be_clickable((By.XPATH, "//mat-option[contains(text(), '(GS)')]"))
+                EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-4-panel']//mat-option[.//span[contains(text(), '(GS)')]]"))
             )
             basicPlan_option_field.click()
+            
             if IsProduction:
                 logger.info("基本計劃 GS option clicked")
             else:
                 print("基本計劃 GS option clicked")
         
+        
+        #保費繳付期
         numberOfYear_select_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-select-value-7"]'))
+            # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-select-value-7"]'))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保費繳付期')]/following-sibling::mat-form-field//mat-select"))
+            
         )
-        numberOfYear_select_field.click()
+        # numberOfYear_select_field.click()
+        driver.execute_script("arguments[0].click();", numberOfYear_select_field)
         if IsProduction:
-            logger.info("保費繳付期 Select clicked")
+            logger.info("保費繳付期 Dropdown clicked")
         else:
-            print("保費繳付期 Select clicked")
+            print("保費繳付期 Dropdown clicked")
         
         number_of_years = str(calculation_data['inputs'].get('numberOfYears', ''))
         if '3' in number_of_years:
@@ -523,35 +551,51 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             else:
                 print("保費繳付期 5 year clicked")
         
+        #無憂選 dropdown box
         worryFreeSelection = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.ID, 'mat-select-value-9'))
+            # EC.visibility_of_element_located((By.ID, 'mat-select-value-9'))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '無憂選')]/following-sibling::mat-form-field//mat-select"))
+            
         )
-        worryFreeSelection.click()
+        # worryFreeSelection.click()
+        driver.execute_script("arguments[0].click();", worryFreeSelection)
         if IsProduction:
-            logger.info("無憂選 Selection clicked")
+            logger.info("無憂選 dropdown clicked")
         else:
-            print("無憂選 Selection clicked")
+            print("無憂選 dropdown clicked")
+            
+            
+
         
+        # click 否
         worryFreeOption = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-option-51"]'))
+            # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-option-51"]'))
+            EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-8-panel']//mat-option[.//span[contains(text(), '否')]]"))
+              # EC.element_to_be_clickable((By.XPATH, "//mat-option[text()='否']"))
+            
         )
-        worryFreeOption.click()
+        # worryFreeOption.click()
+        driver.execute_script("arguments[0].click();", worryFreeOption)
         if IsProduction:
-            logger.info("無憂選 Selection clicked")
+            logger.info("無憂選 否 clicked")
         else:
-            print("無憂選 Selection clicked")
+            print("無憂選 否 clicked")
         
         if "美元" in form_data['currency']:
             currency_select_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-select-value-11"]'))
+                # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-select-value-11"]'))
+                EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '貨幣')]/following-sibling::mat-form-field//mat-select"))
+                
             )
-            currency_select_field.click()
+            # currency_select_field.click()
+            driver.execute_script("arguments[0].click();", currency_select_field)
             if IsProduction:
-                logger.info("貨幣 Select clicked")
+                logger.info("貨幣 dropdown clicked")
             else:
-                print("貨幣 Select clicked")
+                print("貨幣 dropdown clicked")
             currency_option_field = WebDriverWait(driver, TIMEOUT).until(
-                EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-option-53"]'))
+                # EC.visibility_of_element_located((By.XPATH, '//*[@id="mat-option-53"]'))
+                EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-10-panel']//mat-option[.//span[contains(text(), '美元')]]"))
             )
             currency_option_field.click()
             if IsProduction:
@@ -559,25 +603,28 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             else:
                 print("美元 option clicked")
         
+        #名義金額
         nominalAmount_field = WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.XPATH, "//label[contains(text(), '名義金額')]/ancestor::qq-notional-amount//input"))
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '名義金額')]/ancestor::qq-notional-amount//input"))
         )
         nominalAmount_field.clear()
         nominalAmount_field.send_keys(str(form_data['notionalAmount']))
         if IsProduction:
-            logger.info("Notional amount field filled")
+            logger.info("名義金額 field filled")
         else:
-            print("Notional amount field filled")
+            print("名義金額 field filled")
         
+        #保費繳付方式
         if '每年' not in form_data['premiumPaymentMethod']:
             premiumPaymentMethod_select_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.ID, 'mat-select-value-13'))
+                # EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保費繳付方式')]/following-sibling::mat-form-field//mat-select"))
             )
             premiumPaymentMethod_select_field.click()
             if IsProduction:
-                logger.info("保費繳付方式 Select clicked")
+                logger.info("保費繳付方式 dropdown clicked")
             else:
-                print("保費繳付方式 Select clicked")
+                print("保費繳付方式 dropdown clicked")
             if '每半年' in form_data['premiumPaymentMethod']:
                 numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                     EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "每半年")]'))
@@ -605,6 +652,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                     logger.info("保費繳付方式 每月")
                 else:
                     print("保費繳付方式 每月")
+                    
+      
         
         supplimentary_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[6]/span[2]/div'))
@@ -870,6 +919,7 @@ async def initiate_login(request: LoginRequest):
 
 @app.post("/verify-otp")
 async def verify_otp(request: OtpRequest):
+    
     try:
         result = await run_in_thread(
             verify_otp_worker,
