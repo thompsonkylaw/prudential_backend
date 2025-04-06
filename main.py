@@ -45,7 +45,7 @@ handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)
 logger.addHandler(handler)
 
 # Environment flag
-IsProduction = True
+IsProduction = False
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -293,7 +293,9 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict):
             temp_dir = tempfile.mkdtemp()
             pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
             time.sleep(15)
+            logger.info("建議書已成功建立及下載到計劃易系統中!")
             return {"status": "success", "pdf_link": f"/{pdf_path}"}
+            
     except TimeoutException:
         raise Exception("Neither system message nor view button found within 30 seconds")
 
