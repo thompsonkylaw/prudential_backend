@@ -1,4 +1,4 @@
-#before sse
+#before realtime log
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from selenium import webdriver

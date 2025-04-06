@@ -45,7 +45,7 @@ handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)
 logger.addHandler(handler)
 
 # Environment flag
-IsProduction = True
+IsProduction = False
 
 # Initialize FastAPI app
 app = FastAPI()
