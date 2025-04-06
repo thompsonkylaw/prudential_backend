@@ -260,7 +260,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             temp_dir = tempfile.mkdtemp()
             pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
             time.sleep(15)  # Adjust as needed
-            log_message("建議書已成功建立及下載到計劃易系統中! button clicked successfully", queue, loop)
+            log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
             return {"status": "success", "pdf_link": f"/{pdf_path}"}
     except TimeoutException:
         log_message("Neither system message nor view button found within 30 seconds", queue, loop)
