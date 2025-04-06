@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,11 +10,7 @@ import uuid
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
-from queue import Queue
 import time
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import json
 import os
 from typing import List, Dict, Optional
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
@@ -22,7 +19,7 @@ from datetime import datetime
 from selenium.common.exceptions import ElementClickInterceptedException
 import tempfile
 from zoneinfo import ZoneInfo
-from sse_starlette.sse import EventSourceResponse
+import json
 
 # Set up logging
 logging.basicConfig(
@@ -31,21 +28,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Queue to store log messages for streaming
-log_queue = Queue()
-
-# Custom logging handler to put messages into the queue
-class QueueHandler(logging.Handler):
-    def emit(self, record):
-        msg = self.format(record)
-        log_queue.put(msg)
-
-handler = QueueHandler()
-handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(handler)
-
 # Environment flag
-IsProduction = False
+IsProduction = True  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -59,7 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Pydantic models
+# Define Pydantic models
 class LoginRequest(BaseModel):
     url: str
     username: str
@@ -96,20 +80,9 @@ class RetryRequest(BaseModel):
     session_id: str
     new_notional_amount: str
 
-class CalculationRequest(BaseModel):
-    year: str
-    plan: str
-    age: int
-    deductible: int
-    numberOfYears: int
-
-class OutputData(BaseModel):
-    yearNumber: int
-    age: int
-    medicalPremium: float
-
-# Global session storage and timeout
-sessions = {}
+# Global storage
+sessions = {}  # session_id -> {"driver": driver, "form_data": form_data}
+session_queues = {}  # session_id -> asyncio.Queue
 TIMEOUT = 120
 
 # Helper function to run synchronous tasks in a thread
@@ -117,23 +90,16 @@ async def run_in_thread(func, *args):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(executor, func, *args)
 
-# SSE endpoint to stream log messages
-@app.get("/stream-logs")
-async def stream_logs():
-    async def event_generator():
-        while True:
-            if not log_queue.empty():
-                message = log_queue.get()
-                yield {
-                    "event": "message",
-                    "data": message
-                }
-            await asyncio.sleep(0.1)
-
-    return EventSourceResponse(event_generator())
+# Helper function to log messages and put into queue
+def log_message(message: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+    if IsProduction:
+        logger.info(message)
+    else:
+        print(message)
+    asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
 # Selenium worker for initial login
-def selenium_worker(session_id: str, url: str, username: str, password: str):
+def selenium_worker(session_id: str, url: str, username: str, password: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     try:
         options = webdriver.ChromeOptions()
         if IsProduction:
@@ -161,40 +127,41 @@ def selenium_worker(session_id: str, url: str, username: str, password: str):
             EC.visibility_of_element_located((By.ID, "user"))
         )
         login_field.send_keys(username)
-        logger.info("username sent")
+        log_message("username sent", queue, loop)
         
         driver.find_element(By.ID, 'password').send_keys(password)
-        logger.info("password sent")
+        log_message("password sent", queue, loop)
         
         driver.find_element(By.XPATH, '//*[@id="form"]/button').click()
-        logger.info("login button clicked")
+        log_message("login button clicked", queue, loop)
         
         mailOption = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, "//label[contains(., '已登記的電郵地址')]"))
         )
         mailOption.click()
-        logger.info("mailOption clicked")
+        log_message("mailOption clicked", queue, loop)
         
         sendOtpRequestButton = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '//*[@id="otp"]/div[2]/button[1]'))
         )
         sendOtpRequestButton.click()
-        logger.info("sendOtpRequestButton clicked")
+        log_message("sendOtpRequestButton clicked", queue, loop)
+        log_message("一次性密碼從電郵發放中...", queue, loop)
         
         sessions[session_id] = {"driver": driver}
     except Exception as e:
-        logger.error(f"Selenium error: {str(e)}")
+        log_message(f"Selenium error: {str(e)}", queue, loop)
         if session_id in sessions:
             sessions.pop(session_id)["driver"].quit()
         raise
 
 # Helper function to perform checkout
-def perform_checkout(driver, notional_amount: str, form_data: Dict):
+def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     policy_field = WebDriverWait(driver, 30).until(
         EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
     )
     policy_field.click()
-    logger.info("保費摘要 clicked")
+    log_message("保費摘要 clicked", queue, loop)
 
     class EitherElementLocated:
         def __init__(self, locator1, locator2):
@@ -226,15 +193,15 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict):
 
         if result["type"] == "system_message":
             system_message = result["element"].text
-            logger.info(f"系統信息: {system_message}")
+            log_message(f"系統信息: {system_message}", queue, loop)
             return {
-                "status": " asparagus",
+                "status": "retry",
                 "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount}"
             }
         elif result["type"] == "view_button":
             view_button = result["element"]
             view_button.click()
-            logger.info("檢視建議書 clicked")
+            log_message("檢視建議書 clicked", queue, loop)
 
             save_input_field = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//input[@matinput and @maxlength='80']"))
@@ -250,116 +217,119 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict):
             )
             try:
                 save_button.click()
-                logger.info("儲存1 button successfully clicked")
+                log_message("儲存1 button successfully clicked", queue, loop)
             except:
                 ActionChains(driver).move_to_element(save_button).pause(0.5).click().perform()
-                logger.info("儲存2 button successfully clicked")
+                log_message("儲存2 button successfully clicked", queue, loop)
                     
             if str(form_data['proposalLanguage']) == "zh":
                 proposal_language_radio = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
                 )
                 proposal_language_radio.click()
-                logger.info("proposalLanguage_radio = zh")
+                log_message("proposalLanguage_radio = zh", queue, loop)
             elif str(form_data['proposalLanguage']) == "sc":
                 proposal_language_radio = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@value='sc']/ancestor::div[contains(@class, 'mdc-radio')]"))
                 )
                 proposal_language_radio.click()
-                logger.info("proposalLanguage_radio = sc")
+                log_message("proposalLanguage_radio = sc", queue, loop)
             else:
                 proposal_language_radio = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
                 )
                 proposal_language_radio.click()
-                logger.info("proposalLanguage_radio = zh (default)")
+                log_message("proposalLanguage_radio = zh (default)", queue, loop)
 
             label = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//label[.//div[text()='所有年期']]"))
             )
             label.click()
-            logger.info("所有年期 checked")
+            log_message("所有年期 checked", queue, loop)
 
             print_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//cpos-button[.//span[contains(., '列印建議書')]]//button[contains(@class, 'agent-btn')]"))
             )
             try:
                 print_button.click()
-                logger.info("列印建議書1 button clicked successfully")
+                log_message("列印建議書1 button clicked successfully", queue, loop)
             except:
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
-                logger.info("列印建議書2 button clicked successfully")
+                log_message("列印建議書2 button clicked successfully", queue, loop)
 
             temp_dir = tempfile.mkdtemp()
             pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
-            time.sleep(15)
+            time.sleep(15)  # Adjust as needed
+            log_message("建議書已成功建立及下載到計劃易系統中! button clicked successfully", queue, loop)
             return {"status": "success", "pdf_link": f"/{pdf_path}"}
     except TimeoutException:
+        log_message("Neither system message nor view button found within 30 seconds", queue, loop)
         raise Exception("Neither system message nor view button found within 30 seconds")
 
 # Worker to verify OTP and fill form
-def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict):
+def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     session_data = sessions.get(session_id)
     if not session_data or "driver" not in session_data:
+        log_message("Invalid session ID", queue, loop)
         raise ValueError("Invalid session ID")
     driver = session_data["driver"]
     session_data["form_data"] = form_data
     
     try:
-        otp = otp.strip() 
+        otp = otp.strip()
         for i in range(6):
             pin_xpath = f'//*[@id="pin_{i}"]'
             otp_pin = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.XPATH, pin_xpath))
             )
             otp_pin.send_keys(otp[i])
-            logger.info(f"otp_pin_{otp[i]} entered")
+            log_message(f"otp_pin_{otp[i]} entered", queue, loop)
         
         otp_continual_button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="verify"]/div[2]/button[1]'))
         )
         otp_continual_button.click()
-        logger.info("繼續 clicked")
+        log_message("繼續 clicked", queue, loop)
         
         proposal_button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//button[.//span[text()='製作建議書']]"))
         )
         proposal_button.click()
-        logger.info("Proposal button clicked")
+        log_message("Proposal button clicked", queue, loop)
         
         if form_data['isCorporateCustomer']:
             isCorporateCustomer_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.presence_of_element_located((By.ID, "mat-mdc-checkbox-1-input"))
             )
             isCorporateCustomer_field.click()
-            logger.info("Clicked isCorporateCustomer checkbox")
+            log_message("Clicked isCorporateCustomer checkbox", queue, loop)
         
         if form_data['isPolicyHolder']:
             isPolicyHolder_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.presence_of_element_located((By.ID, 'mat-radio-5-input'))
             )
             isPolicyHolder_field.click()
-            logger.info("isPolicyHolder is true")
+            log_message("isPolicyHolder is true", queue, loop)
         else:
             isPolicyHolder_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.presence_of_element_located((By.ID, 'mat-radio-6-input'))
             )
             isPolicyHolder_field.click()
-            logger.info("isPolicyHolder is false")
+            log_message("isPolicyHolder is false", queue, loop)
                 
         sureName_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "英文姓氏")]]//input'))
         )
         sureName_field.clear()
         sureName_field.send_keys(str(form_data['surname']))
-        logger.info("Surname field filled")
+        log_message("Surname field filled", queue, loop)
         
         givenName_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "英文名字")]]//input'))
         )
         givenName_field.clear()
         givenName_field.send_keys(str(form_data['givenName']))
-        logger.info("Given name field filled")
+        log_message("Given name field filled", queue, loop)
         
         if form_data['chineseName']:
             chineseName_field = WebDriverWait(driver, TIMEOUT).until(
@@ -367,53 +337,53 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             )
             chineseName_field.clear()
             chineseName_field.send_keys(str(form_data['chineseName']))
-            logger.info("chineseName_field filled")
+            log_message("chineseName_field filled", queue, loop)
         
         age_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "投保年齡")]]//input'))
         )
         age_field.clear()
         age_field.send_keys(str(form_data['insuranceAge']))
-        logger.info("insuranceAge field filled")
+        log_message("insuranceAge field filled", queue, loop)
         
         if "Female" in form_data['gender']:
             gender_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.XPATH, "//mat-radio-button[@value='Female']"))
             )
             gender_field.click()
-            logger.info("gender_field Female clicked")
+            log_message("gender_field Female clicked", queue, loop)
         
         if form_data['isSmoker']:
             isSmoker_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.element_to_be_clickable((By.XPATH, "//mat-radio-button[@value='Yes']"))
             )
             isSmoker_field.click()
-            logger.info("isSmoker_field yes clicked")
-                
+            log_message("isSmoker_field yes clicked", queue, loop)
+        
         basicPlan_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[2]/span[2]/div'))
         )
         basicPlan_field.click()
-        logger.info("基本計劃page clicked")
-            
+        log_message("基本計劃page clicked", queue, loop)
+        
         basicPlan_select_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '基本計劃')]/following-sibling::mat-form-field//mat-select"))
         )
         driver.execute_script("arguments[0].click();", basicPlan_select_field)
-        logger.info("基本計劃 Dropdown clicked")
+        log_message("基本計劃 Dropdown clicked", queue, loop)
         
         if 'GS' in str(form_data['basicPlan']):
             basicPlan_option_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-4-panel']//mat-option[.//span[contains(text(), '(GS)')]]"))
             )
             basicPlan_option_field.click()
-            logger.info("基本計劃 GS option clicked")
+            log_message("基本計劃 GS option clicked", queue, loop)
         
         numberOfYear_select_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保費繳付期')]/following-sibling::mat-form-field//mat-select"))
         )
         driver.execute_script("arguments[0].click();", numberOfYear_select_field)
-        logger.info("保費繳付期 Dropdown clicked")
+        log_message("保費繳付期 Dropdown clicked", queue, loop)
         
         number_of_years = str(calculation_data['inputs'].get('numberOfYears', ''))
         if '3' in number_of_years:
@@ -421,93 +391,93 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "3")]'))
             )
             numberOfYear_option_field.click()
-            logger.info("保費繳付期 3 year clicked")
+            log_message("保費繳付期 3 year clicked", queue, loop)
         elif '15' in number_of_years:
             numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "15")]'))
             )
             numberOfYear_option_field.click()
-            logger.info("保費繳付期 15 year clicked")
+            log_message("保費繳付期 15 year clicked", queue, loop)
         elif '10' in number_of_years:
             numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "10")]'))
             )
             numberOfYear_option_field.click()
-            logger.info("保費繳付期 10 year clicked")
+            log_message("保費繳付期 10 year clicked", queue, loop)
         elif '5' in number_of_years:
             numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "5")]'))
             )
             numberOfYear_option_field.click()
-            logger.info("保費繳付期 5 year clicked")
+            log_message("保費繳付期 5 year clicked", queue, loop)
         
         worryFreeSelection = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '無憂選')]/following-sibling::mat-form-field//mat-select"))
         )
         driver.execute_script("arguments[0].click();", worryFreeSelection)
-        logger.info("無憂選 dropdown clicked")
+        log_message("無憂選 dropdown clicked", queue, loop)
         
         worryFreeOption = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-8-panel']//mat-option[.//span[contains(text(), '否')]]"))
         )
         driver.execute_script("arguments[0].click();", worryFreeOption)
-        logger.info("無憂選 否 clicked")
+        log_message("無憂選 否 clicked", queue, loop)
         
         if "美元" in form_data['currency']:
             currency_select_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '貨幣')]/following-sibling::mat-form-field//mat-select"))
             )
             driver.execute_script("arguments[0].click();", currency_select_field)
-            logger.info("貨幣 dropdown clicked")
+            log_message("貨幣 dropdown clicked", queue, loop)
             currency_option_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-10-panel']//mat-option[.//span[contains(text(), '美元')]]"))
             )
             currency_option_field.click()
-            logger.info("美元 option clicked")
+            log_message("美元 option clicked", queue, loop)
         
         nominalAmount_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '名義金額')]/ancestor::qq-notional-amount//input"))
         )
         nominalAmount_field.clear()
         nominalAmount_field.send_keys(str(form_data['notionalAmount']))
-        logger.info("名義金額 field filled")
+        log_message("名義金額 field filled", queue, loop)
         
         if '每年' not in form_data['premiumPaymentMethod']:
             premiumPaymentMethod_select_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.ID, 'mat-select-value-13'))
             )
             premiumPaymentMethod_select_field.click()
-            logger.info("保費繳付方式 dropdown clicked")
+            log_message("保費繳付方式 dropdown clicked", queue, loop)
             if '每半年' in form_data['premiumPaymentMethod']:
                 numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                     EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "每半年")]'))
                 )
                 numberOfYear_option_field.click()
-                logger.info("保費繳付方式 每半年")
+                log_message("保費繳付方式 每半年", queue, loop)
             elif '每季' in form_data['premiumPaymentMethod']:
                 numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                     EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "每季")]'))
                 )
                 numberOfYear_option_field.click()
-                logger.info("保費繳付方式 每季")
+                log_message("保費繳付方式 每季", queue, loop)
             elif '每月' in form_data['premiumPaymentMethod']:
                 numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                     EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "每月")]'))
                 )
                 numberOfYear_option_field.click()
-                logger.info("保費繳付方式 每月")
+                log_message("保費繳付方式 每月", queue, loop)
         
         supplimentary_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[6]/span[2]/div'))
         )
         supplimentary_field.click()
-        logger.info("補充利益說明 page clicked")
+        log_message("補充利益說明 page clicked", queue, loop)
         
         you_hope_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '是')]"))
         )
         you_hope_field.click()
-        logger.info("提取說明 clicked")
+        log_message("提取說明 clicked", queue, loop)
             
         xpath = "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"
         try:
@@ -519,23 +489,23 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 EC.element_to_be_clickable((By.XPATH, xpath))
             )
             element.click()
-            logger.info("指定提取金額1 clicked")
+            log_message("指定提取金額1 clicked", queue, loop)
         except ElementClickInterceptedException:
-            logger.info("Click intercepted, attempting JavaScript click...")
+            log_message("Click intercepted, attempting JavaScript click...", queue, loop)
             driver.execute_script("arguments[0].click();", element)
-            logger.info("指定提取金額2 clicked")
+            log_message("JS Click successful", queue, loop)
         
         withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='請選擇您的提取款項由']]/following-sibling::mat-radio-group//label[.//span[text()='保單年度']]"))
         )
         withdraw_start_from.click()
-        logger.info("保單年度 clicked")
+        log_message("保單年度 clicked", queue, loop)
         
         continue_button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., '繼續')]"))
         )
         continue_button.click()
-        logger.info("繼續 clicked")
+        log_message("繼續 clicked", queue, loop)
         
         startYearNumber = str(int(number_of_years) + 1)
         base_num = None
@@ -544,10 +514,10 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 from_year_field = WebDriverWait(driver, 3).until(
                     EC.visibility_of_element_located((By.ID, f"mat-input-{start_id}")))
                 base_num = int(start_id)
-                logger.info(f"成功定位到基础ID: mat-input-{start_id}")
+                log_message(f"成功定位到基础ID: mat-input-{start_id}", queue, loop)
                 break
             except TimeoutException:
-                logger.info(f"ID mat-input-{start_id} 未找到，尝试下一个...")
+                log_message(f"ID mat-input-{start_id} 未找到，尝试下一个...", queue, loop)
                 continue
 
         if base_num is None:
@@ -555,7 +525,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
 
         from_year_field.clear()
         from_year_field.send_keys(startYearNumber)
-        logger.info("由(保單年度) filled")
+        log_message("由(保單年度) filled", queue, loop)
 
         field_ids = {
             'takeout_year': f"mat-input-{base_num + 1}",
@@ -563,13 +533,12 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             'inflation': f"mat-input-{base_num + 3}"
         }
 
-        # numberOfWithDrawYear = str(100 - int(number_of_years) - int(calculation_data['inputs'].get('age', '')))
-        numberOfWithDrawYear = str(100 - int(number_of_years) - int(form_data['insuranceAge']))
+        numberOfWithDrawYear = str(100 - int(number_of_years) - int(calculation_data['inputs'].get('age', '')))
         takeout_year_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.ID, field_ids['takeout_year'])))
         takeout_year_field.clear()
         takeout_year_field.send_keys(numberOfWithDrawYear)
-        logger.info(f"提取年期 filled with ID {field_ids['takeout_year']}")
+        log_message(f"提取年期 filled with ID {field_ids['takeout_year']}", queue, loop)
 
         every_year_amount_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.ID, field_ids['every_year_amount'])))
@@ -582,7 +551,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
                 premium = round(premium / currency_rate, 0)
             every_year_amount_field.send_keys(str(int(premium)))
-        logger.info(f"每年提取金額 filled with ID {field_ids['every_year_amount']}")
+        log_message(f"每年提取金額 filled with ID {field_ids['every_year_amount']}", queue, loop)
 
         if form_data['useInflation']:
             inflation_rate = str(calculation_data['inputs'].get('inflationRate', ''))
@@ -591,13 +560,13 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             )
             inflation_field.clear()
             inflation_field.send_keys(inflation_rate)
-            logger.info(f"通货膨胀率 filled with ID {field_ids['inflation']}")
+            log_message(f"通货膨胀率 filled with ID {field_ids['inflation']}", queue, loop)
 
         enter_button = WebDriverWait(driver, TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, "//span[text()='加入']"))
         )
         driver.execute_script("arguments[0].click();", enter_button)
-        logger.info("加入 clicked")
+        log_message("加入 clicked", queue, loop)
 
         if not form_data['useInflation']:
             sorted_data = sorted(calculation_data['processedData'], key=lambda x: x['yearNumber'])
@@ -618,23 +587,27 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 )
                 input_field.clear()
                 input_field.send_keys(str(int(premium)))
-                logger.info(f"Filled year {entry['yearNumber']} ({premium}) in field {input_index}")
+                log_message(f"Filled year {entry['yearNumber']} ({premium}) in field {input_index}", queue, loop)
 
-        result = perform_checkout(driver, form_data['notionalAmount'], form_data)
+        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
+            session_queues.pop(session_id, None)
         return result
 
     except Exception as e:
+        log_message(f"Error in verify_otp_worker: {str(e)}", queue, loop)
         driver.quit()
         sessions.pop(session_id, None)
+        session_queues.pop(session_id, None)
         raise
 
 # Worker to retry with a new notional amount
-def retry_notional_worker(session_id: str, new_notional_amount: str):
+def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     session_data = sessions.get(session_id)
     if not session_data or "driver" not in session_data or "form_data" not in session_data:
+        log_message("Invalid session ID", queue, loop)
         raise ValueError("Invalid session ID")
     driver = session_data["driver"]
     form_data = session_data["form_data"]
@@ -644,68 +617,81 @@ def retry_notional_worker(session_id: str, new_notional_amount: str):
             EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[2]/span[2]/div'))
         )
         basicPlan_field.click()
-        logger.info("基本計劃 page clicked")
+        log_message("基本計劃 page clicked", queue, loop)
 
         nominalAmount_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, "//label[contains(text(), '名義金額')]/ancestor::qq-notional-amount//input"))
         )
         nominalAmount_field.clear()
         nominalAmount_field.send_keys(new_notional_amount)
-        logger.info("New notional amount filled")
+        log_message("New notional amount filled", queue, loop)
 
-        result = perform_checkout(driver, new_notional_amount, form_data)
+        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
+            session_queues.pop(session_id, None)
         return result
 
     except Exception as e:
+        log_message(f"Error in retry_notional_worker: {str(e)}", queue, loop)
         driver.quit()
         sessions.pop(session_id, None)
+        session_queues.pop(session_id, None)
         raise
 
 # Helper function to get medical premium
 def get_medical_premium(processed_data, start_year_number):
     try:
         if not isinstance(processed_data, list):
-            logger.info(f"Expected list, got {type(processed_data)}")
             return None
         for entry in processed_data:
             if not isinstance(entry, dict):
                 continue
             if entry.get('yearNumber') == int(start_year_number) and 'medicalPremium' in entry:
                 return entry['medicalPremium']
-        logger.info(f"No matching entry found for year {start_year_number}")
         return None
     except Exception as e:
-        logger.info(f"Processing error: {str(e)}")
         return None
 
 # FastAPI endpoints
 @app.post("/login")
 async def initiate_login(request: LoginRequest):
     session_id = str(uuid.uuid4())
+    queue = asyncio.Queue()
+    session_queues[session_id] = queue
+    loop = asyncio.get_running_loop()
     try:
         await run_in_thread(
             selenium_worker,
             session_id,
             request.url,
             request.username,
-            request.password
+            request.password,
+            queue,
+            loop
         )
         return {"session_id": session_id}
     except Exception as e:
+        session_queues.pop(session_id, None)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/verify-otp")
 async def verify_otp(request: OtpRequest):
+    session_id = request.session_id
+    queue = session_queues.get(session_id)
+    if not queue:
+        raise HTTPException(status_code=404, detail="Session not found")
+    loop = asyncio.get_running_loop()
     try:
         result = await run_in_thread(
             verify_otp_worker,
-            request.session_id,
+            session_id,
             request.otp,
             request.calculation_data.dict(),
-            request.formData.dict()
+            request.formData.dict(),
+            queue,
+            loop
         )
         return result
     except Exception as e:
@@ -713,15 +699,49 @@ async def verify_otp(request: OtpRequest):
 
 @app.post("/retry-notional")
 async def retry_notional(request: RetryRequest):
+    session_id = request.session_id
+    queue = session_queues.get(session_id)
+    if not queue:
+        raise HTTPException(status_code=404, detail="Session not found")
+    loop = asyncio.get_running_loop()
     try:
         result = await run_in_thread(
             retry_notional_worker,
-            request.session_id,
-            request.new_notional_amount
+            session_id,
+            request.new_notional_amount,
+            queue,
+            loop
         )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# SSE endpoint for logs
+@app.get("/logs/{session_id}")
+async def stream_logs(session_id: str):
+    queue = session_queues.get(session_id)
+    if not queue:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    async def event_generator():
+        while True:
+            message = await queue.get()
+            yield f"data: {message}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# Data retrieval endpoint (unchanged)
+class CalculationRequest(BaseModel):
+    year: str
+    plan: str
+    age: int
+    deductible: int
+    numberOfYears: int
+
+class OutputData(BaseModel):
+    yearNumber: int
+    age: int
+    medicalPremium: float
 
 @app.post("/getData", response_model=List[OutputData])
 async def get_data(request: CalculationRequest):
