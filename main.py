@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to False for development, True for production
+IsProduction = False  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -154,8 +154,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         if session_id in sessions:
             sessions.pop(session_id)["driver"].quit()
         raise
-
-# Helper function to perform checkout
+    
 def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     policy_field = WebDriverWait(driver, 30).until(
         EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
@@ -165,22 +164,24 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
 
     class EitherElementLocated:
         def __init__(self, locator1, locator2):
-            self.locator1 = locator1
-            self.locator2 = locator2
+            self.locator1 = locator1  # Locator for system messages
+            self.locator2 = locator2  # Locator for view button
 
         def __call__(self, driver):
+            # Check all system messages for the keyword "所達年齡"
+            system_messages = driver.find_elements(*self.locator1)
+            for msg in system_messages:
+                 if msg.is_displayed() and any(keyword in msg.text for keyword in ["所達年齡", "總每年保費不能少於"]):
+                    return {"type": "system_message", "element": msg}
+            
+            # If no relevant system message found, check for view button
             try:
-                element = driver.find_element(*self.locator1)
-                if element.is_displayed():
-                    return {"type": "system_message", "element": element}
+                view_element = driver.find_element(*self.locator2)
+                if view_element.is_displayed():
+                    return {"type": "view_button", "element": view_element}
             except NoSuchElementException:
                 pass
-            try:
-                element = driver.find_element(*self.locator2)
-                if element.is_displayed():
-                    return {"type": "view_button", "element": element}
-            except NoSuchElementException:
-                pass
+            
             return False
 
     system_message_locator = (By.XPATH, "//div[@class='control-message']//li")
@@ -198,6 +199,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 "status": "retry",
                 "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount}"
             }
+     
         elif result["type"] == "view_button":
             view_button = result["element"]
             view_button.click()
@@ -263,8 +265,121 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
             return {"status": "success", "pdf_link": f"/{pdf_path}"}
     except TimeoutException:
-        log_message("Neither system message nor view button found within 30 seconds", queue, loop)
-        raise Exception("Neither system message nor view button found within 30 seconds")
+        log_message("Neither relevant system message nor view button found within 30 seconds", queue, loop)
+        raise Exception("Neither relevant system message nor view button found within 30 seconds")
+
+
+# # Helper function to perform checkout
+# def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+#     policy_field = WebDriverWait(driver, 30).until(
+#         EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
+#     )
+#     policy_field.click()
+#     log_message("保費摘要 clicked", queue, loop)
+
+#     class EitherElementLocated:
+#         def __init__(self, locator1, locator2):
+#             self.locator1 = locator1
+#             self.locator2 = locator2
+
+#         def __call__(self, driver):
+#             try:
+#                 element = driver.find_element(*self.locator1)
+#                 if element.is_displayed():
+#                     return {"type": "system_message", "element": element}
+#             except NoSuchElementException:
+#                 pass
+#             try:
+#                 element = driver.find_element(*self.locator2)
+#                 if element.is_displayed():
+#                     return {"type": "view_button", "element": element}
+#             except NoSuchElementException:
+#                 pass
+#             return False
+
+#     system_message_locator = (By.XPATH, "//div[@class='control-message']//li")
+#     view_button_locator = (By.XPATH, "/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/div/div/qq-premium-summary/div/div[3]/button/span[2]")
+
+#     try:
+#         result = WebDriverWait(driver, 30).until(
+#             EitherElementLocated(system_message_locator, view_button_locator)
+#         )
+
+#         if result["type"] == "system_message":
+#             system_message = result["element"].text
+#             log_message(f"系統信息: {system_message}", queue, loop)
+#             return {
+#                 "status": "retry",
+#                 "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount}"
+#             }
+     
+#         elif result["type"] == "view_button":
+#             view_button = result["element"]
+#             view_button.click()
+#             log_message("檢視建議書 clicked", queue, loop)
+
+#             save_input_field = WebDriverWait(driver, 10).until(
+#                 EC.element_to_be_clickable((By.XPATH, "//input[@matinput and @maxlength='80']"))
+#             )
+#             tz_gmt8 = ZoneInfo("Asia/Shanghai")
+#             timestamp = datetime.now(tz_gmt8).strftime("%Y%m%d%H%M")
+#             filename = f"宏摯傳承保障計劃_{timestamp}"
+#             save_input_field.clear()
+#             save_input_field.send_keys(filename)
+
+#             save_button = WebDriverWait(driver, 15).until(
+#                 EC.element_to_be_clickable((By.XPATH, "//mat-dialog-container//div[@class='dialog-buttons']/button[contains(., '儲存')]"))
+#             )
+#             try:
+#                 save_button.click()
+#                 log_message("儲存1 button successfully clicked", queue, loop)
+#             except:
+#                 ActionChains(driver).move_to_element(save_button).pause(0.5).click().perform()
+#                 log_message("儲存2 button successfully clicked", queue, loop)
+                    
+#             if str(form_data['proposalLanguage']) == "zh":
+#                 proposal_language_radio = WebDriverWait(driver, 10).until(
+#                     EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
+#                 )
+#                 proposal_language_radio.click()
+#                 log_message("proposalLanguage_radio = zh", queue, loop)
+#             elif str(form_data['proposalLanguage']) == "sc":
+#                 proposal_language_radio = WebDriverWait(driver, 10).until(
+#                     EC.element_to_be_clickable((By.XPATH, "//input[@value='sc']/ancestor::div[contains(@class, 'mdc-radio')]"))
+#                 )
+#                 proposal_language_radio.click()
+#                 log_message("proposalLanguage_radio = sc", queue, loop)
+#             else:
+#                 proposal_language_radio = WebDriverWait(driver, 10).until(
+#                     EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
+#                 )
+#                 proposal_language_radio.click()
+#                 log_message("proposalLanguage_radio = zh (default)", queue, loop)
+
+#             label = WebDriverWait(driver, 10).until(
+#                 EC.element_to_be_clickable((By.XPATH, "//label[.//div[text()='所有年期']]"))
+#             )
+#             label.click()
+#             log_message("所有年期 checked", queue, loop)
+
+#             print_button = WebDriverWait(driver, 15).until(
+#                 EC.element_to_be_clickable((By.XPATH, "//cpos-button[.//span[contains(., '列印建議書')]]//button[contains(@class, 'agent-btn')]"))
+#             )
+#             try:
+#                 print_button.click()
+#                 log_message("列印建議書1 button clicked successfully", queue, loop)
+#             except:
+#                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
+#                 log_message("列印建議書2 button clicked successfully", queue, loop)
+
+#             temp_dir = tempfile.mkdtemp()
+#             pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
+#             time.sleep(15)  # Adjust as needed
+#             log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
+#             return {"status": "success", "pdf_link": f"/{pdf_path}"}
+#     except TimeoutException:
+#         log_message("Neither system message nor view button found within 30 seconds", queue, loop)
+#         raise Exception("Neither system message nor view button found within 30 seconds")
 
 # Worker to verify OTP and fill form
 def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
@@ -507,33 +622,90 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         continue_button.click()
         log_message("繼續 clicked", queue, loop)
         
+        
+        WebDriverWait(driver, TIMEOUT).until(EC.staleness_of(continue_button))
+
+        # Step 1: Add a small delay to handle potential animations or async updates
+        time.sleep(1)
+        
         startYearNumber = str(int(number_of_years) + 1)
         base_num = None
+        
+       
         for start_id in ['14', '19']:
+            log_message(f"Try 14 19", queue, loop)  
+            input_id = f"mat-input-{start_id}"
             try:
-                from_year_field = WebDriverWait(driver, 3).until(
-                    EC.visibility_of_element_located((By.ID, f"mat-input-{start_id}")))
-                base_num = int(start_id)
-                log_message(f"成功定位到基础ID: mat-input-{start_id}", queue, loop)
-                break
+                input_field = WebDriverWait(driver, 3).until(
+                    EC.presence_of_element_located((By.ID, input_id))
+                )
+                # Get associated label text using XPath traversal
+                log_message(f"input_id={input_id}", queue, loop)    
+                label = input_field.find_element(
+                    By.XPATH,
+                    ".//ancestor::mat-form-field/preceding-sibling::div[@class='mat-label-box']/mat-label"
+                )
+                if label.text.strip() == '由(保單年度)':
+                    base_num = start_id
+                    log_message(f"由(保單年度) input_id(14/19) ={input_id}", queue, loop)   
+                    from_year_field = WebDriverWait(driver, 3).until(
+                        EC.visibility_of_element_located((By.ID, f"{input_id}")))
+                    from_year_field.send_keys(startYearNumber)
+                    log_message(f"由(保單年度) Filled(14/19) {startYearNumber}", queue, loop)  
+                    break 
+               
             except TimeoutException:
-                log_message(f"ID mat-input-{start_id} 未找到，尝试下一个...", queue, loop)
+                log_message(f"ID mat-input-{input_id} 未找到，尝试下一个...", queue, loop)
                 continue
 
+           
         if base_num is None:
-            raise Exception("无法定位由(保單年度)的输入框")
+            log_message(f"Try 20-31", queue, loop)  
+            input_id = 0
+        
+            for i in range(13, 31):
+                input_id = f"mat-input-{i}"
+                
+                try:
+                    # Check if input exists
+                    log_message(f"input_id={input_id}", queue, loop)    
+                    input_field = WebDriverWait(driver, 3).until(
+                        EC.presence_of_element_located((By.ID, input_id))
+                    )
+                    # Get associated label text using XPath traversal
+                    
+                    label = input_field.find_element(
+                        By.XPATH,
+                        ".//ancestor::mat-form-field/preceding-sibling::div[@class='mat-label-box']/mat-label"
+                    )
+                    
+                    
+                    if label.text.strip() == '由(保單年度)':
+                        base_num = i
+                        log_message(f"由(保單年度) input_id ={input_id}", queue, loop)   
+                        from_year_field = WebDriverWait(driver, 3).until(
+                            EC.visibility_of_element_located((By.ID, f"{input_id}")))
+                        from_year_field.send_keys(startYearNumber)
+                        log_message(f"由(保單年度) Filled {startYearNumber}", queue, loop)  
+                        break 
+                        
+                except Exception:
+                    continue
+            
 
-        from_year_field.clear()
-        from_year_field.send_keys(startYearNumber)
-        log_message("由(保單年度) filled", queue, loop)
-
+        # from_year_field.clear()
+        # from_year_field.send_keys(startYearNumber)
+        # log_message("由(保單年度) filled", queue, loop)
+        
         field_ids = {
-            'takeout_year': f"mat-input-{base_num + 1}",
-            'every_year_amount': f"mat-input-{base_num + 2}",
-            'inflation': f"mat-input-{base_num + 3}"
+            'takeout_year': f"mat-input-{int(base_num) + 1}",
+            'every_year_amount': f"mat-input-{int(base_num) + 2}",
+            'inflation': f"mat-input-{int(base_num) + 3}"
         }
-
+      
         numberOfWithDrawYear = str(100 - int(number_of_years) - int(calculation_data['inputs'].get('age', '')))
+       
+        
         takeout_year_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.ID, field_ids['takeout_year'])))
         takeout_year_field.clear()
@@ -561,11 +733,12 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             inflation_field.clear()
             inflation_field.send_keys(inflation_rate)
             log_message(f"通货膨胀率 filled with ID {field_ids['inflation']}", queue, loop)
-
+        
         enter_button = WebDriverWait(driver, TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, "//span[text()='加入']"))
         )
         driver.execute_script("arguments[0].click();", enter_button)
+        
         log_message("加入 clicked", queue, loop)
 
         if not form_data['useInflation']:
