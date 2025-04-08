@@ -291,28 +291,30 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         otp_continual_button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="verify"]/div[2]/button[1]'))
         )
-        otp_continual_button.click()
+        driver.execute_script("arguments[0].click();", otp_continual_button)
+        # otp_continual_button.click()
         log_message("繼續 clicked", queue, loop)
         
         # Check for OTP error message or proceed to next step
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 20).until(
                 lambda d: (
-                    d.find_element(By.XPATH, "//button[.//span[text()='製作建議書']]") or
-                    d.find_element(By.XPATH, "//span[@class='text e-tips' and contains(text(), '您輸入的一次性密碼不正確')]")
+                    d.find_element(By.XPATH, "//button[.//span[text()='製作建議書']]")
+                    # or
+                    # d.find_element(By.XPATH, "//span[@class='text e-tips' and contains(text(), '您輸入的一次性密碼不正確')]")
                 )
             )
             # Check if error message is present
-            try:
-                error_element = driver.find_element(By.XPATH, "//span[@class='text e-tips' and contains(text(), '您輸入的一次性密碼不正確')]")
-                if error_element.is_displayed():
-                    log_message("OTP is incorrect", queue, loop)
-                    return {"status": "otp_failed", "message": "OTP is incorrect. Please try again."}
-            except NoSuchElementException:
-                pass  # No error message, proceed to next step
+            # try:
+            #     error_element = driver.find_element(By.XPATH, "//span[@class='text e-tips' and contains(text(), '您輸入的一次性密碼不正確')]")
+            #     if error_element.is_displayed():
+            #         log_message("OTP is incorrect", queue, loop)
+            #         return {"status": "otp_failed", "message": "OTP is incorrect. Please try again."}
+            # except NoSuchElementException:
+            #     pass  # No error message, proceed to next step
         except TimeoutException:
             log_message("您輸入的一次性密碼不正確", queue, loop)
-            return {"status": "otp_failed", "message": "OTP is incorrect. Please try again."}
+            # return {"status": "otp_failed", "message": "OTP is incorrect. Please try again."}
             raise Exception("您輸入的一次性密碼不正確")
         
         # Proceed if OTP is correct
