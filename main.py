@@ -66,6 +66,7 @@ class FormData(BaseModel):
     basicPlan: str
     currency: str
     notionalAmount: str
+    premiumPaymentPeriod: str
     premiumPaymentMethod: str
     useInflation: bool
     proposalLanguage: str
@@ -370,8 +371,9 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "投保年齡")]]//input'))
         )
         age_field.clear()
-        age_field.send_keys(str(form_data['insuranceAge']))
-        log_message("insuranceAge field filled", queue, loop)
+        # age_field.send_keys(str(form_data['insuranceAge']))
+        age_field.send_keys(str(calculation_data['inputs'].get('age', '')))
+        log_message(f"age_field field filled={str(calculation_data['inputs'].get('age', ''))}", queue, loop)
         
         if "Female" in form_data['gender']:
             gender_field = WebDriverWait(driver, TIMEOUT).until(
@@ -412,7 +414,10 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         driver.execute_script("arguments[0].click();", numberOfYear_select_field)
         log_message("保費繳付期 Dropdown clicked", queue, loop)
         
-        number_of_years = str(calculation_data['inputs'].get('numberOfYears', ''))
+        # number_of_years = str(calculation_data['inputs'].get('numberOfYears', ''))
+        number_of_years = str(form_data['premiumPaymentPeriod'])
+        log_message(f"number_of_years={number_of_years}", queue, loop)
+ 
         if '3' in number_of_years:
             numberOfYear_option_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.visibility_of_element_located((By.XPATH, '//mat-option[contains(., "3")]'))
@@ -648,7 +653,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                     premium = round(premium / currency_rate, 0)
                 input_index = 28 + (idx * 5)
                 xpath = f'//*[@id="mat-input-{input_index}"]'
-                input_field = WebDriverWait(driver, 10).until(
+                input_field = WebDriverWait(driver, 20).until(
                     EC.visibility_of_element_located((By.XPATH, xpath))
                 )
                 input_field.clear()
