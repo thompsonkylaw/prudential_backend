@@ -804,10 +804,10 @@ async def stream_logs(session_id: str):
 
 # Data retrieval endpoint
 class CalculationRequest(BaseModel):
-    company: str
-    planFileName: str
+    year: str
+    plan: str
     age: int
-    planOption: str
+    deductible: int
     numberOfYears: int
 
 class OutputData(BaseModel):
@@ -820,26 +820,18 @@ async def get_data(request: CalculationRequest):
     try:
         json_file = os.path.join(
             "plans",
-            request.company,
-            f"{request.planFileName}.json"
-            
-            # "晉悅自願醫保靈活計劃_智選_2024-12-29_HKD_na_na.json"
+            request.year,
+            "manulife",
+            f"{request.plan}_{request.year}.json"
         )
-        print("request.planFileName=",request.planFileName)
-        print("request.planOption=",request.planOption)
-        with open(json_file, 'r', encoding='utf-8') as f:
+        with open(json_file, 'r') as f:
             data = json.load(f)
-           
-        if "晉領醫療" in request.planFileName:
-            max_age = 99
-        else:    
-            max_age = 100
+        max_age = 100
         max_years = max(max_age - request.age + 1, 1)
         result = []
         for year in range(1, max_years + 1):
             current_age = request.age + year - 1
-            if str(current_age) not in data[str(request.planOption)]:
-                
+            if str(current_age) not in data[str(request.deductible)]:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Premium data not found for age {current_age}"
@@ -847,7 +839,7 @@ async def get_data(request: CalculationRequest):
             result.append({
                 "yearNumber": year,
                 "age": current_age,
-                "medicalPremium": data[str(request.planOption)][str(current_age)]
+                "medicalPremium": data[str(request.deductible)][str(current_age)]
             })
         return result
     except FileNotFoundError:

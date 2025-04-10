@@ -2,8 +2,8 @@ import tabula
 import pandas as pd
 import os
 
-pdf_path = "plans/2025/manulife/manulife-supreme-vhis-premium.pdf"
-output_dir = "plans/2025/manulife/tables"
+pdf_path = "plans/workspace/活亮人生醫療保障系列附加保障ManuShine(122024).pdf"
+output_dir = "plans/workspace/tables"
 os.makedirs(output_dir, exist_ok=True)
 
 # Read all tables from the PDF
