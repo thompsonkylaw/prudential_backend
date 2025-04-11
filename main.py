@@ -33,7 +33,7 @@ IsProduction = True  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
-executor = ThreadPoolExecutor(max_workers=5)
+executor = ThreadPoolExecutor(max_workers=8)
 
 # Add CORS middleware
 app.add_middleware(
