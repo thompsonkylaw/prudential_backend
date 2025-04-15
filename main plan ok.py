@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = False  # Set to False for development, True for production
+IsProduction = True  # Set to False for development, True for production
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -294,7 +294,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         )
         driver.execute_script("arguments[0].click();", otp_continual_button)
         # otp_continual_button.click()
-        log_message("繼續 clicked, 請稍後...", queue, loop)
+        log_message("繼續 clicked", queue, loop)
         
         # Check for OTP error message or proceed to next step
         try:
@@ -637,7 +637,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             EC.presence_of_element_located((By.XPATH, "//span[text()='加入']"))
         )
         driver.execute_script("arguments[0].click();", enter_button)
-        log_message("加入 clicked, 請稍後... ", queue, loop)
+        log_message("加入 clicked", queue, loop)
 
         if not form_data['useInflation']:
             sorted_data = sorted(calculation_data['processedData'], key=lambda x: x['yearNumber'])
