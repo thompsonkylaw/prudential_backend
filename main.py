@@ -199,12 +199,13 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             log_message(f"系統信息: {system_message}", queue, loop)
             return {
                 "status": "retry",
-                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount}"
+                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount:,.2f}"
             }
      
         elif result["type"] == "view_button":
             view_button = result["element"]
             view_button.click()
+            log_message("名義金額而獲通過", queue, loop)
             log_message("檢視建議書 clicked", queue, loop)
 
             save_input_field = WebDriverWait(driver, 10).until(
