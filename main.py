@@ -227,7 +227,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             )
             try:
                 save_button.click()
-                log_message("儲存1 button successfully clicked", queue, loop)
+                log_message("儲存 button successfully clicked", queue, loop)
             except:
                 ActionChains(driver).move_to_element(save_button).pause(0.5).click().perform()
                 log_message("儲存2 button successfully clicked", queue, loop)
@@ -262,7 +262,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             )
             try:
                 print_button.click()
-                log_message("列印建議書1 button clicked successfully", queue, loop)
+                log_message("列印建議書 button clicked successfully", queue, loop)
             except:
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
@@ -399,7 +399,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[2]/span[2]/div'))
         )
         basicPlan_field.click()
-        log_message("基本計劃page clicked", queue, loop)
+        log_message("基本計劃 page clicked", queue, loop)
         
         basicPlan_select_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '基本計劃')]/following-sibling::mat-form-field//mat-select"))
@@ -702,7 +702,7 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         )
         nominalAmount_field.clear()
         nominalAmount_field.send_keys(new_notional_amount)
-        log_message("New notional amount filled", queue, loop)
+        log_message(f"New notional amount filled with {new_notional_amount}", queue, loop)
 
         result = perform_checkout(driver, new_notional_amount, form_data, queue, loop)
         if result["status"] == "success":
@@ -836,10 +836,11 @@ async def get_data(request: CalculationRequest):
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
            
-        if "晉領醫療" in request.planFileName:
-            max_age = 99
-        else:    
-            max_age = 100
+        # if "晉領醫療" in request.planFileName:
+        #     max_age = 99
+        # else:    
+        #     max_age = 100
+        max_age = 100    
         max_years = max(max_age - request.age + 1, 1)
         result = []
         for year in range(1, max_years + 1):
