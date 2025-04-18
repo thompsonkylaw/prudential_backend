@@ -197,9 +197,16 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
         if result["type"] == "system_message":
             system_message = result["element"].text
             log_message(f"系統信息: {system_message}", queue, loop)
+            try:
+                # Safely convert to float first, then format
+                amount = float(notional_amount) if notional_amount else 0.0
+                formatted_amount = f"${amount:,.2f}"
+            except (ValueError, TypeError):
+                formatted_amount = "$0.00"
+            
             return {
                 "status": "retry",
-                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount:,.2f}"
+                "system_message": f"{system_message}\n 對上一次輸入的名義金額為{formatted_amount}"
             }
      
         elif result["type"] == "view_button":
