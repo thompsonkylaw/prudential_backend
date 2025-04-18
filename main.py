@@ -201,7 +201,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             # 先移除所有逗號，再處理小數點
             cleaned_amount = notional_amount.replace(',', '')      # 移除千位分隔符
             integer_part = cleaned_amount.split('.')[0]            # 分割小數點取整數部分
-            formatted_amount = f"${int(integer_part):,}"           # 重新添加千位分隔符
+            formatted_amount = f"{int(integer_part):,}"           # 重新添加千位分隔符
             return {
                 "status": "retry",
                 "system_message": f"{system_message}\n 對上一次輸入的名義金額為${formatted_amount}"
