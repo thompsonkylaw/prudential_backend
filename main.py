@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to False for development, True for production
+IsProduction = False  # Set to False for development and use head, True for production use headless
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -197,9 +197,13 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
         if result["type"] == "system_message":
             system_message = result["element"].text
             log_message(f"系統信息: {system_message}", queue, loop)
+            
+            # 移除小數點後的內容並添加千位分隔符
+            integer_part = notional_amount.split('.')[0]
+            formatted_amount = f"${int(integer_part):,}"
             return {
                 "status": "retry",
-                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${notional_amount}"
+                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${formatted_amount}"
             }
      
         elif result["type"] == "view_button":
