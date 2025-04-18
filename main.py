@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = False  # Set to False for development and use head, True for production use headless
+IsProduction = True  # Set to False for development and use head, True for production use headless
 
 # Initialize FastAPI app
 app = FastAPI()
