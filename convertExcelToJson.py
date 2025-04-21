@@ -3,7 +3,7 @@ import json
 import numpy as np  # Needed for type checking
 
 # Load the Excel file
-filename ="晉領醫療保障系列_附加保障_標準計劃_2024-12-29_HKD_na_na"
+filename ="守護一生醫療_附加保障_適用於非香港或澳門居民_2024-07-01_HKD_女_基礎"
 file_path = f'plans/workspace/tables/{filename}.xlsx'
 df = pd.read_excel(file_path)
 
@@ -25,7 +25,7 @@ for column in df.columns:
     
     # Populate age-value pairs
     for _, row in df.iterrows():
-        age = str(row['Age'])
+        age = str(int(row['Age']))
         
         # Convert numpy types to native Python types
         value = row[column]
