@@ -3,7 +3,7 @@ import json
 import numpy as np  # Needed for type checking
 
 # Load the Excel file
-filename ="守護一生醫療_附加保障_適用於非香港或澳門居民_2024-07-01_HKD_女_基礎"
+filename ="守護一生醫療_附加保障_適用於非香港或澳門居民_2024-07-01_HKD_男_基礎"
 file_path = f'plans/workspace/tables/{filename}.xlsx'
 df = pd.read_excel(file_path)
 
