@@ -279,12 +279,15 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
 
-            # Wait for the new window/tab to open
-            WebDriverWait(driver, 15).until(EC.new_window_is_opened(driver.window_handles))
+            
 
+            # Wait for the new window/tab to open
+            WebDriverWait(driver, 60).until(EC.new_window_is_opened(driver.window_handles))
+            log_message("WebDriverWait new_window_is_opened ", queue, loop)
             # Switch to the new window
             driver.switch_to.window(driver.window_handles[-1])
-            time.sleep(5)
+            log_message("switch_to window ", queue, loop)
+            time.sleep(10)
 
             # Wait for the blob URL to appear (Solution 1)
             timeout = 60  # Wait up to 60 seconds
