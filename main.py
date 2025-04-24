@@ -317,8 +317,8 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             # DeepSeek API call
             system_prompt = (
                 "幫我在「款項提取說明－退保價值」表格中找出65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
-                "如果找到的數值是美元,就要使用7.85匯率轉為港幣"
-                "答案要儘量簡單直接輸出一句'65歲和85歲的「款 title提取後的退保價值總額(C) + (D)」的數值是 **HKDxxxxxx**',數值前面要加上2個*號"
+                "如果找到的數值是美元,就要使用7.85匯率轉為港元, 答案就顯示美元及港元"
+                "答案要儘量簡單直接輸出一句'65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值是 **USDxxxxxx** 及 **HKDxxxxxx**',數值前面要加上2個*號"
                 "最后要講出答案是從哪一頁找到"
             )
             messages = [
