@@ -278,8 +278,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
 
-            time.sleep(15)
-            log_message("15s delay", queue, loop)
+            time.sleep(10)
             # Capture PDF content from network response
             pdf_content = None
             start_time = time.time()
@@ -333,8 +332,8 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             log_message(f"Deepseek reply={ai_response}", queue, loop)
 
             # Clean up
-            # driver.close()
-            # driver.switch_to.window(driver.window_handles[0])
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
             log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
 
             return {"status": "success", "ai_response": ai_response}
