@@ -277,9 +277,10 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             except:
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
-
-            time.sleep(15)
+            
             log_message("列印中, 請稍後..." , queue, loop)
+            time.sleep(15)
+            
             # Capture PDF content from network response
             pdf_content = None
             start_time = time.time()
@@ -316,7 +317,9 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             # DeepSeek API call
             system_prompt = (
                 "幫我在「款項提取說明－退保價值」表格中找出65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
+                "如果找到的數值是美元,就要使用7.85匯率轉為港幣"
                 "答案要儘量簡單直接輸出一句'65歲和85歲的「款 title提取後的退保價值總額(C) + (D)」的數值是 **HKDxxxxxx**',數值前面要加上2個*號"
+                "最后要講出答案是從哪一頁找到"
             )
             messages = [
                 {"role": "system", "content": system_prompt},
