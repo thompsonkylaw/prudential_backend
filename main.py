@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = False  # Set to True in production on Railway.app
+IsProduction = True  # Set to True in production on Railway.app
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -279,7 +279,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 log_message("列印建議書2 button clicked successfully", queue, loop)
 
             time.sleep(15)
-            log_message("15s delay", queue, loop)
+            log_message("列印中, 請稍後..." , queue, loop)
             # Capture PDF content from network response
             pdf_content = None
             start_time = time.time()
