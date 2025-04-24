@@ -1,7 +1,3 @@
-import requests
-import io
-import pdfplumber
-from openai import OpenAI
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -24,14 +20,12 @@ from selenium.common.exceptions import ElementClickInterceptedException
 import tempfile
 from zoneinfo import ZoneInfo
 import json
-import asyncio
-import base64
-from dotenv import load_dotenv
+
 import shutil
+import pdfplumber
+from openai import OpenAI
 
-load_dotenv()
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-
+# Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -39,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to False for development and use head, True for production use headless
+IsProduction = False  # Set to False for development and use head, True for production use headless
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -126,7 +120,6 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-        # options.add_argument('--headless')
         
         if IsProduction:
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
@@ -169,36 +162,38 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
 
 # Helper function to perform checkout
 def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+    policy_field = WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
+    )
+    policy_field.click()
+    log_message("保費摘要 clicked", queue, loop)
+
+    class EitherElementLocated:
+        def __init__(self, locator1, locator2):
+            self.locator1 = locator1  # Locator for system messages
+            self.locator2 = locator2  # Locator for view button
+
+        def __call__(self, driver):
+            # Check all system messages for the keyword "所達年齡"
+            system_messages = driver.find_elements(*self.locator1)
+            for msg in system_messages:
+                 if msg.is_displayed() and any(keyword in msg.text for keyword in ["所達年齡", "總每年保費不能少於"]):
+                    return {"type": "system_message", "element": msg}
+            
+            # If no relevant system message found, check for view button
+            try:
+                view_element = driver.find_element(*self.locator2)
+                if view_element.is_displayed():
+                    return {"type": "view_button", "element": view_element}
+            except NoSuchElementException:
+                pass
+            
+            return False
+
+    system_message_locator = (By.XPATH, "//div[@class='control-message']//li")
+    view_button_locator = (By.XPATH, "/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/div/div/qq-premium-summary/div/div[3]/button/span[2]")
+
     try:
-        # Click "保費摘要"
-        policy_field = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
-        )
-        policy_field.click()
-        log_message("保費摘要 clicked", queue, loop)
-
-        # Custom condition to check for system message or view button
-        class EitherElementLocated:
-            def __init__(self, locator1, locator2):
-                self.locator1 = locator1  # System messages
-                self.locator2 = locator2  # View button
-
-            def __call__(self, driver):
-                system_messages = driver.find_elements(*self.locator1)
-                for msg in system_messages:
-                    if msg.is_displayed() and any(keyword in msg.text for keyword in ["所達年齡", "總每年保費不能少於"]):
-                        return {"type": "system_message", "element": msg}
-                try:
-                    view_element = driver.find_element(*self.locator2)
-                    if view_element.is_displayed():
-                        return {"type": "view_button", "element": view_element}
-                except NoSuchElementException:
-                    pass
-                return False
-
-        system_message_locator = (By.XPATH, "//div[@class='control-message']//li")
-        view_button_locator = (By.XPATH, "/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/div/div/qq-premium-summary/div/div[3]/button/span[2]")
-
         result = WebDriverWait(driver, 30).until(
             EitherElementLocated(system_message_locator, view_button_locator)
         )
@@ -206,20 +201,22 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
         if result["type"] == "system_message":
             system_message = result["element"].text
             log_message(f"系統信息: {system_message}", queue, loop)
-            cleaned_amount = notional_amount.replace(',', '')
-            integer_part = cleaned_amount.split('.')[0]
-            formatted_amount = f"{int(integer_part):,}"
+            
+            # 先移除所有逗號，再處理小數點
+            cleaned_amount = notional_amount.replace(',', '')      # 移除千位分隔符
+            integer_part = cleaned_amount.split('.')[0]            # 分割小數點取整數部分
+            formatted_amount = f"{int(integer_part):,}"           # 重新添加千位分隔符
             return {
                 "status": "retry",
                 "system_message": f"{system_message}\n 對上一次輸入的名義金額為${formatted_amount}"
             }
+     
         elif result["type"] == "view_button":
             view_button = result["element"]
             view_button.click()
             log_message("名義金額而獲通過", queue, loop)
             log_message("檢視建議書 clicked", queue, loop)
 
-            # Enter filename in save input field
             save_input_field = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//input[@matinput and @maxlength='80']"))
             )
@@ -229,7 +226,6 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             save_input_field.clear()
             save_input_field.send_keys(filename)
 
-            # Click save button
             save_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//mat-dialog-container//div[@class='dialog-buttons']/button[contains(., '儲存')]"))
             )
@@ -239,8 +235,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             except:
                 ActionChains(driver).move_to_element(save_button).pause(0.5).click().perform()
                 log_message("儲存2 button successfully clicked", queue, loop)
-
-            # Select proposal language
+                    
             if str(form_data['proposalLanguage']) == "zh":
                 proposal_language_radio = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
@@ -260,14 +255,12 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 proposal_language_radio.click()
                 log_message("proposalLanguage_radio = zh (default)", queue, loop)
 
-            # Check "所有年期"
             label = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//label[.//div[text()='所有年期']]"))
             )
             label.click()
             log_message("所有年期 checked", queue, loop)
 
-            # Click print button
             print_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//cpos-button[.//span[contains(., '列印建議書')]]//button[contains(@class, 'agent-btn')]"))
             )
@@ -278,101 +271,15 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
 
-            # Wait for the new window/tab to open
-            WebDriverWait(driver, 15).until(EC.new_window_is_opened(driver.window_handles))
-
-            # Switch to the new window
-            driver.switch_to.window(driver.window_handles[-1])
-            time.sleep(5)
-
-            # Wait for the blob URL to appear (Solution 1)
-            timeout = 60  # Wait up to 60 seconds
-            start_time = time.time()
-            while not driver.current_url.startswith("blob:"):
-                if time.time() - start_time > timeout:
-                    raise TimeoutException("Timeout waiting for blob URL")
-                time.sleep(1)  # Check every second
-
-            pdf_url = driver.current_url
-            log_message(f"Found PDF blob URL: {pdf_url}", queue, loop)
-
-            # Fetch the blob content as a base64 string using JavaScript
-            try:
-                base64_data = driver.execute_async_script("""
-                    var callback = arguments[arguments.length - 1];
-                    async function getBlobAsBase64(url) {
-                        const response = await fetch(url);
-                        const blob = await response.blob();
-                        return new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                            reader.onerror = reject;
-                            reader.readAsDataURL(blob);
-                        });
-                    }
-                    getBlobAsBase64(arguments[0]).then(callback);
-                """, pdf_url)
-                log_message("PDF content fetched as base64", queue, loop)
-            except Exception as e:
-                log_message(f"Error fetching blob content: {str(e)}", queue, loop)
-                raise Exception(f"Failed to fetch blob content: {str(e)}")
-
-            # Decode the base64 string to bytes
-            
-            try:
-                pdf_bytes = base64.b64decode(base64_data)
-            except Exception as e:
-                log_message(f"Error decoding base64 data: {str(e)}", queue, loop)
-                raise Exception(f"Base64 decoding failed: {str(e)}")
-
-            # Process the PDF content in memory
-            pdf_file = io.BytesIO(pdf_bytes)
-            with pdfplumber.open(pdf_file) as pdf:
-                text = ""
-                for page in pdf.pages:
-                    text += page.extract_text() or ""
-                # print("text=",text)  
-                # log_message(f"Text {text}", queue, loop)  
-            log_message(f"Text extracted from PDF. Path={pdf_url}", queue, loop)
-            
-           
-            # DeepSeek API call
-            system_prompt = (
-                "幫我在「款項提取說明－退保價值」表格中找出65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值," 
-                "答案要儘量簡單直接輸出一句'65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值是 **HKDxxxxxx**',數值前面要加上2個*號"
-                # "如果貨幣是美元就需要把數值對回匯率7.85顯示"
-            )
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ]
-
-            try:
-
-                client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
-                response = client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=messages,
-                    stream=False
-                )
-                ai_response = response.choices[0].message.content
-                log_message(f"Deepseek reply={ai_response}", queue, loop)
-                print((f"Deepseek reply={ai_response}", queue, loop))
-            except Exception as e:
-                log_message(f"Error calling DeepSeek API: {str(e)}", queue, loop)
-                raise Exception(f"DeepSeek API call failed: {str(e)}")
-
-            # Clean up: Close the PDF tab and switch back to the main window
-            driver.close()
-            driver.switch_to.window(driver.window_handles[0])
-
+            temp_dir = tempfile.mkdtemp()
+            pdf_path = os.path.join(temp_dir, f"{filename}.pdf")
+            time.sleep(15)  # Adjust as needed
             log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
-            return {"status": "success", "pdf_link": pdf_url}
-
+            return {"status": "success", "pdf_link": f"/{pdf_path}"}
     except TimeoutException:
         log_message("Neither relevant system message nor view button found within 30 seconds", queue, loop)
         raise Exception("Neither relevant system message nor view button found within 30 seconds")
-    
+
 # Worker to verify OTP and fill form
 def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     session_data = sessions.get(session_id)

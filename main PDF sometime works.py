@@ -26,10 +26,10 @@ from zoneinfo import ZoneInfo
 import json
 import asyncio
 import base64
-from dotenv import load_dotenv
+
 import shutil
 
-load_dotenv()
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 logging.basicConfig(
@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to False for development and use head, True for production use headless
+IsProduction = False  # Set to False for development and use head, True for production use headless
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -283,7 +283,6 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
 
             # Switch to the new window
             driver.switch_to.window(driver.window_handles[-1])
-            time.sleep(5)
 
             # Wait for the blob URL to appear (Solution 1)
             timeout = 60  # Wait up to 60 seconds
@@ -349,7 +348,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
 
             try:
 
-                client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+                client = OpenAI(api_key="sk-a96c8196a00241ee9f587cf1d1f1b99d", base_url="https://api.deepseek.com")
                 response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=messages,
