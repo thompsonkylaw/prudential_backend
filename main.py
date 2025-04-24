@@ -120,7 +120,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
 
         if IsProduction:
             options.add_argument('--headless')
-            download_dir = "/app/downloads"  # Shared volume path on Railway.app
+            download_dir = "/appdata/"  # Shared volume path on Railway.app
         else:
             download_dir = tempfile.mkdtemp()  # Temporary directory for development
 
