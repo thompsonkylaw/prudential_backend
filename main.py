@@ -336,7 +336,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             )
             ai_response = response.choices[0].message.content
             
-            ai_response = ''.join([line + '\r' for line in ai_response.splitlines()])
+           
                 
             
                 
