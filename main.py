@@ -92,7 +92,7 @@ class RetryRequest(BaseModel):
     new_notional_amount: str
 
 # Global storage
-sessions = {}  # session_id -> {"driver": driver, "form_data": form_data, "download_dir": download_dir}
+sessions = {}  # session_id -> {"driver": driver, "form_data": form_data}
 session_queues = {}  # session_id -> asyncio.Queue
 TIMEOUT = 120
 
@@ -111,27 +111,22 @@ def log_message(message: str, queue: asyncio.Queue, loop: asyncio.AbstractEventL
 
 # Selenium worker for initial login
 def selenium_worker(session_id: str, url: str, username: str, password: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
-    download_dir = None
     try:
         options = webdriver.ChromeOptions()
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-
-        if IsProduction:
-            options.add_argument('--headless')
-            download_dir = "/appdata/"  # Shared volume path on Railway.app
-        else:
-            download_dir = tempfile.mkdtemp()  # Temporary directory for development
-
+        # Enable performance logging
+        options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+        # Remove download directory settings since we won't save to disk
         prefs = {
-            "download.default_directory": download_dir,
             "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": True,  # Force PDF download
+            "plugins.always_open_pdf_externally": True,  # Still force PDF download behavior
         }
         options.add_experimental_option("prefs", prefs)
 
         if IsProduction:
+            options.add_argument('--headless')
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
         else:
             driver = webdriver.Chrome(options=options)
@@ -163,19 +158,17 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         log_message("sendOtpRequestButton clicked", queue, loop)
         log_message("一次性密碼從電郵發放中...", queue, loop)
 
-        sessions[session_id] = {"driver": driver, "download_dir": download_dir}
+        sessions[session_id] = {"driver": driver}
     except Exception as e:
         log_message(f"Selenium error: {str(e)}", queue, loop)
         if session_id in sessions:
             driver = sessions.pop(session_id).get("driver")
             if driver:
                 driver.quit()
-        if not IsProduction and download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
         raise
 
-# Helper function to perform checkout and detect PDF
-def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, download_dir: str):
+# Helper function to perform checkout and capture PDF from network
+def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     try:
         # Click "保費摘要"
         policy_field = WebDriverWait(driver, 30).until(
@@ -274,7 +267,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             label.click()
             log_message("所有年期 checked", queue, loop)
 
-            # Click print button
+            # Click print button to trigger PDF download
             print_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//cpos-button[.//span[contains(., '列印建議書')]]//button[contains(@class, 'agent-btn')]"))
             )
@@ -285,23 +278,33 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
 
-            # Wait for PDF to download
-            expected_filename = f"{filename}.pdf"
-            expected_path = os.path.join(download_dir, expected_filename)
-            timeout = 60
+            # Capture PDF content from network response
+            pdf_content = None
             start_time = time.time()
-            while not os.path.exists(expected_path):
-                if time.time() - start_time > timeout:
-                    raise TimeoutException(f"PDF {expected_filename} not downloaded within timeout")
+            while time.time() - start_time < 60:  # Wait up to 60 seconds
+                logs = driver.get_log('performance')
+                for log in logs:
+                    message = json.loads(log['message'])['message']
+                    if message['method'] == 'Network.responseReceived':
+                        response = message['params']['response']
+                        if response['mimeType'] == 'application/pdf':
+                            request_id = message['params']['requestId']
+                            body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
+                            if body['base64Encoded']:
+                                pdf_content = base64.b64decode(body['body'])
+                            else:
+                                pdf_content = body['body'].encode()
+                            break
+                if pdf_content:
+                    break
                 time.sleep(1)
-            log_message(f"PDF downloaded to: {expected_path}", queue, loop)
+            else:
+                raise TimeoutException("PDF response not found within timeout")
 
-            # Read PDF
-            with open(expected_path, "rb") as f:
-                pdf_bytes = f.read()
+            log_message("PDF content captured from network response", queue, loop)
 
             # Process PDF content in memory
-            pdf_file = io.BytesIO(pdf_bytes)
+            pdf_file = io.BytesIO(pdf_content)
             with pdfplumber.open(pdf_file) as pdf:
                 text = ""
                 for page in pdf.pages:
@@ -311,7 +314,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             # DeepSeek API call
             system_prompt = (
                 "幫我在「款項提取說明－退保價值」表格中找出65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
-                "答案要儘量簡單直接輸出一句'65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值是 **HKDxxxxxx**',數值前面要加上2個*號"
+                "答案要儘量簡單直接輸出一句'65歲和85歲的「款 title提取後的退保價值總額(C) + (D)」的數值是 **HKDxxxxxx**',數值前面要加上2個*號"
             )
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -332,10 +335,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             driver.switch_to.window(driver.window_handles[0])
             log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
 
-            # Delete the PDF file
-            os.remove(expected_path)
-
-            return {"status": "success", "pdf_link": expected_path}
+            return {"status": "success", "ai_response": ai_response}
 
     except TimeoutException as e:
         log_message(f"Error: {str(e)}", queue, loop)
@@ -348,7 +348,6 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         log_message("Invalid session ID", queue, loop)
         raise ValueError("Invalid session ID")
     driver = session_data["driver"]
-    download_dir = session_data["download_dir"]
     session_data["form_data"] = form_data
 
     try:
@@ -703,11 +702,9 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 input_field.send_keys(str(int(premium)))
                 log_message(f"Filled year {entry['yearNumber']} ({premium}) in field {input_index}", queue, loop)
 
-        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop, download_dir)
+        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop)
         if result["status"] == "success":
             driver.quit()
-            if not IsProduction:
-                shutil.rmtree(download_dir)
             sessions.pop(session_id, None)
             session_queues.pop(session_id, None)
         return result
@@ -715,8 +712,6 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
     except Exception as e:
         log_message(f"Error in verify_otp_worker: {str(e)}", queue, loop)
         driver.quit()
-        if not IsProduction and download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
         sessions.pop(session_id, None)
         session_queues.pop(session_id, None)
         raise
@@ -729,7 +724,6 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         raise ValueError("Invalid session ID")
     driver = session_data["driver"]
     form_data = session_data["form_data"]
-    download_dir = session_data["download_dir"]
 
     try:
         basicPlan_field = WebDriverWait(driver, TIMEOUT).until(
@@ -745,11 +739,9 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         nominalAmount_field.send_keys(new_notional_amount)
         log_message(f"New notional amount filled with {new_notional_amount}", queue, loop)
 
-        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop, download_dir)
+        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop)
         if result["status"] == "success":
             driver.quit()
-            if not IsProduction:
-                shutil.rmtree(download_dir)
             sessions.pop(session_id, None)
             session_queues.pop(session_id, None)
         return result
@@ -757,8 +749,6 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
     except Exception as e:
         log_message(f"Error in retry_notional_worker: {str(e)}", queue, loop)
         driver.quit()
-        if not IsProduction and download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
         sessions.pop(session_id, None)
         session_queues.pop(session_id, None)
         raise
