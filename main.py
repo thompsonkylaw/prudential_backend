@@ -325,7 +325,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
             ]
-
+            log_message("AI 查找答案中, 請稍後...", queue, loop)
             client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
             response = client.chat.completions.create(
                 model="deepseek-chat",
