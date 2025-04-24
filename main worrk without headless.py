@@ -119,8 +119,9 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
             prefs = {
                 "download.default_directory": temp_dir,
                 "download.prompt_for_download": False,
-                "plugins.always_open_pdf_externally": False
+                "plugins.always_open_pdf_externally": True
             }
+            
             options.add_experimental_option("prefs", prefs)
         
         options.add_argument('--no-sandbox')
