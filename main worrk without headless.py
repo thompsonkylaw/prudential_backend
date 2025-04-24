@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = False  # Set to False for development, True for production
+IsProduction = False  # Set to False for development and use head, True for production use headless
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -92,7 +92,7 @@ class RetryRequest(BaseModel):
     new_notional_amount: str
 
 # Global storage
-sessions = {}  # session_id -> {"driver": driver, "form_data": form_data, "download_dir": temp_dir}
+sessions = {}  # session_id -> {"driver": driver, "form_data": form_data}
 session_queues = {}  # session_id -> asyncio.Queue
 TIMEOUT = 120
 
@@ -113,25 +113,26 @@ def log_message(message: str, queue: asyncio.Queue, loop: asyncio.AbstractEventL
 def selenium_worker(session_id: str, url: str, username: str, password: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     try:
         options = webdriver.ChromeOptions()
-        temp_dir = tempfile.mkdtemp()
-        prefs = {
-            "download.default_directory": temp_dir,
-            "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": True  # Download PDFs instead of opening
-        }
-        options.add_experimental_option("prefs", prefs)
         if IsProduction:
             options.add_argument('--headless')
+            temp_dir = tempfile.mkdtemp()
+            prefs = {
+                "download.default_directory": temp_dir,
+                "download.prompt_for_download": False,
+                "plugins.always_open_pdf_externally": False
+            }
+            options.add_experimental_option("prefs", prefs)
+        
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-        options.add_argument('--headless')
+        # options.add_argument('--headless')
         
         if IsProduction:
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
         else:
-            driver = webdriver.Chrome(options=options)
-        
+            driver = webdriver.Chrome(options=options)   
+             
         driver.get(url)
         
         login_field = WebDriverWait(driver, TIMEOUT).until(
@@ -159,7 +160,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         log_message("sendOtpRequestButton clicked", queue, loop)
         log_message("一次性密碼從電郵發放中...", queue, loop)
         
-        sessions[session_id] = {"driver": driver, "download_dir": temp_dir}
+        sessions[session_id] = {"driver": driver}
     except Exception as e:
         log_message(f"Selenium error: {str(e)}", queue, loop)
         if session_id in sessions:
@@ -167,7 +168,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         raise
 
 # Helper function to perform checkout
-def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, download_dir: str):
+def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     try:
         # Click "保費摘要"
         policy_field = WebDriverWait(driver, 30).until(
@@ -277,31 +278,69 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
                 log_message("列印建議書2 button clicked successfully", queue, loop)
 
-            # Wait for the PDF to be downloaded
-            expected_pdf_path = os.path.join(download_dir, f"{filename}.pdf")
+            # Wait for the new window/tab to open
+            WebDriverWait(driver, 15).until(EC.new_window_is_opened(driver.window_handles))
+
+            # Switch to the new window
+            driver.switch_to.window(driver.window_handles[-1])
+            time.sleep(5)
+
+            # Wait for the blob URL to appear (Solution 1)
             timeout = 60  # Wait up to 60 seconds
             start_time = time.time()
-            while not os.path.exists(expected_pdf_path):
+            while not driver.current_url.startswith("blob:"):
                 if time.time() - start_time > timeout:
-                    raise TimeoutException("Timeout waiting for PDF download")
-                time.sleep(1)
-            log_message(f"PDF downloaded to: {expected_pdf_path}", queue, loop)
+                    raise TimeoutException("Timeout waiting for blob URL")
+                time.sleep(1)  # Check every second
 
-            # Read the PDF from disk
-            with open(expected_pdf_path, "rb") as f:
-                pdf_bytes = f.read()
+            pdf_url = driver.current_url
+            log_message(f"Found PDF blob URL: {pdf_url}", queue, loop)
+
+            # Fetch the blob content as a base64 string using JavaScript
+            try:
+                base64_data = driver.execute_async_script("""
+                    var callback = arguments[arguments.length - 1];
+                    async function getBlobAsBase64(url) {
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        return new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(blob);
+                        });
+                    }
+                    getBlobAsBase64(arguments[0]).then(callback);
+                """, pdf_url)
+                log_message("PDF content fetched as base64", queue, loop)
+            except Exception as e:
+                log_message(f"Error fetching blob content: {str(e)}", queue, loop)
+                raise Exception(f"Failed to fetch blob content: {str(e)}")
+
+            # Decode the base64 string to bytes
+            
+            try:
+                pdf_bytes = base64.b64decode(base64_data)
+            except Exception as e:
+                log_message(f"Error decoding base64 data: {str(e)}", queue, loop)
+                raise Exception(f"Base64 decoding failed: {str(e)}")
 
             # Process the PDF content in memory
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            pdf_file = io.BytesIO(pdf_bytes)
+            with pdfplumber.open(pdf_file) as pdf:
                 text = ""
                 for page in pdf.pages:
                     text += page.extract_text() or ""
-            log_message("Text extracted from PDF", queue, loop)
-
+                # print("text=",text)  
+                # log_message(f"Text {text}", queue, loop)  
+            log_message(f"Text extracted from PDF. Path={pdf_url}", queue, loop)
+            
+           
             # DeepSeek API call
             system_prompt = (
                 "幫我在「款項提取說明－退保價值」表格中找出65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值," 
-                "答案要儘量簡單直接輸出一句'65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值是 **xxxxxx**',數值前面要加上2個*號"
+                "答案要儘量簡單直接輸出一句'65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值是 **HKDxxxxxx**',數值前面要加上2個*號"
+                # "如果貨幣是美元就需要把數值對回匯率7.85顯示"
             )
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -309,6 +348,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             ]
 
             try:
+
                 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
                 response = client.chat.completions.create(
                     model="deepseek-chat",
@@ -317,22 +357,22 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 )
                 ai_response = response.choices[0].message.content
                 log_message(f"Deepseek reply={ai_response}", queue, loop)
-                
+                print((f"Deepseek reply={ai_response}", queue, loop))
             except Exception as e:
                 log_message(f"Error calling DeepSeek API: {str(e)}", queue, loop)
                 raise Exception(f"DeepSeek API call failed: {str(e)}")
 
-            # Optionally delete the PDF file after processing
-            os.remove(expected_pdf_path)
-            log_message(f"PDF file deleted: {expected_pdf_path}", queue, loop)
+            # Clean up: Close the PDF tab and switch back to the main window
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
 
             log_message("建議書已成功建立及下載到計劃易系統中!", queue, loop)
-            return {"status": "success", "pdf_path": expected_pdf_path}
+            return {"status": "success", "pdf_link": pdf_url}
 
     except TimeoutException:
         log_message("Neither relevant system message nor view button found within 30 seconds", queue, loop)
         raise Exception("Neither relevant system message nor view button found within 30 seconds")
-
+    
 # Worker to verify OTP and fill form
 def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     session_data = sessions.get(session_id)
@@ -356,15 +396,29 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             EC.element_to_be_clickable((By.XPATH, '//*[@id="verify"]/div[2]/button[1]'))
         )
         driver.execute_script("arguments[0].click();", otp_continual_button)
+        # otp_continual_button.click()
         log_message("繼續 clicked, 請稍後...", queue, loop)
         
         # Check for OTP error message or proceed to next step
         try:
             WebDriverWait(driver, 20).until(
-                lambda d: d.find_element(By.XPATH, "//button[.//span[text()='製作建議書']]")
+                lambda d: (
+                    d.find_element(By.XPATH, "//button[.//span[text()='製作建議書']]")
+                    # or
+                    # d.find_element(By.XPATH, "//span[@class='text e-tips' and contains(text(), '您輸入的一次性密碼不正確')]")
+                )
             )
+            # Check if error message is present
+            # try:
+            #     error_element = driver.find_element(By.XPATH, "//span[@class='text e-tips' and contains(text(), '您輸入的一次性密碼不正確')]")
+            #     if error_element.is_displayed():
+            #         log_message("OTP is incorrect", queue, loop)
+            #         return {"status": "otp_failed", "message": "OTP is incorrect. Please try again."}
+            # except NoSuchElementException:
+            #     pass  # No error message, proceed to next step
         except TimeoutException:
             log_message("您輸入的一次性密碼不正確", queue, loop)
+            # return {"status": "otp_failed", "message": "OTP is incorrect. Please try again."}
             raise Exception("您輸入的一次性密碼不正確")
         
         # Proceed if OTP is correct
@@ -420,6 +474,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "投保年齡")]]//input'))
         )
         age_field.clear()
+        # age_field.send_keys(str(form_data['insuranceAge']))
         age_field.send_keys(str(calculation_data['inputs'].get('age', '')))
         log_message(f"age_field field filled={str(calculation_data['inputs'].get('age', ''))}", queue, loop)
         
@@ -462,6 +517,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         driver.execute_script("arguments[0].click();", numberOfYear_select_field)
         log_message("保費繳付期 Dropdown clicked", queue, loop)
         
+        # number_of_years = str(calculation_data['inputs'].get('numberOfYears', ''))
         number_of_years = str(form_data['premiumPaymentPeriod'])
         log_message(f"number_of_years={number_of_years}", queue, loop)
  
@@ -588,6 +644,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         
         WebDriverWait(driver, TIMEOUT).until(EC.staleness_of(continue_button))
 
+        # Step 1: Add a small delay to handle potential animations or async updates
         time.sleep(1)
         
         startYearNumber = str(int(number_of_years) + 1)
@@ -620,6 +677,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
 
         if base_num is None:
             log_message(f"Try 20-31", queue, loop)  
+            input_id = 0
+        
             for i in range(13, 31):
                 input_id = f"mat-input-{i}"
                 try:
@@ -704,8 +763,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 input_field.send_keys(str(int(premium)))
                 log_message(f"Filled year {entry['yearNumber']} ({premium}) in field {input_index}", queue, loop)
                 
-        download_dir = sessions[session_id]["download_dir"]
-        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop, download_dir)
+
+        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
@@ -742,8 +801,7 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         nominalAmount_field.send_keys(new_notional_amount)
         log_message(f"New notional amount filled with {new_notional_amount}", queue, loop)
 
-        download_dir = sessions[session_id]["download_dir"]
-        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop, download_dir)
+        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
@@ -867,18 +925,25 @@ async def get_data(request: CalculationRequest):
             "plans",
             request.company,
             f"{request.planFileName}.json"
+            
+            # "晉悅自願醫保靈活計劃_智選_2024-12-29_HKD_na_na.json"
         )
         print("request.planFileName=",request.planFileName)
         print("request.planOption=",request.planOption)
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
            
+        # if "晉領醫療" in request.planFileName:
+        #     max_age = 99
+        # else:    
+        #     max_age = 100
         max_age = 100    
         max_years = max(max_age - request.age + 1, 1)
         result = []
         for year in range(1, max_years + 1):
             current_age = request.age + year - 1
             if str(current_age) not in data[str(request.planOption)]:
+                
                 raise HTTPException(
                     status_code=400,
                     detail=f"Premium data not found for age {current_age}"
