@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True    # Set to True in production on Railway.app
+IsProduction = False    # Set to True in production on Railway.app
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -336,12 +336,12 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             )
             ai_response = response.choices[0].message.content
             
-           
+            lines = ai_response.splitlines()
                 
-            
+            # Send each line using log_message
+            for line in lines:
+                log_message(f"AI 回覆 : {line}", queue, loop)
                 
-            log_message(f"AI 回覆 : {ai_response}", queue, loop)
-
             # Clean up
             # driver.close()
             # driver.switch_to.window(driver.window_handles[0])
