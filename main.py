@@ -712,6 +712,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 input_field.clear()
                 input_field.send_keys(str(int(premium)))
                 log_message(f"已填 year {entry['yearNumber']} ({premium}) in field {input_index}", queue, loop)
+                time.sleep(0.2)
 
         result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop)
         if result["status"] == "success":
