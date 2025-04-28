@@ -403,13 +403,13 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 EC.presence_of_element_located((By.ID, 'mat-radio-5-input'))
             )
             isPolicyHolder_field.click()
-            log_message("是保單全有人", queue, loop)
+            log_message("是保單持有人", queue, loop)
         else:
             isPolicyHolder_field = WebDriverWait(driver, TIMEOUT).until(
                 EC.presence_of_element_located((By.ID, 'mat-radio-6-input'))
             )
             isPolicyHolder_field.click()
-            log_message("不是保單全有人", queue, loop)
+            log_message("不是保單持有人", queue, loop)
 
         sureName_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "英文姓氏")]]//input'))
