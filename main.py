@@ -28,6 +28,7 @@ import asyncio
 import base64
 from dotenv import load_dotenv
 import shutil
+import re
 
 load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -64,6 +65,12 @@ class CalculationData(BaseModel):
     inputs: Dict
     totalAccumulatedMP: float
 
+class CashValueInfo(BaseModel):
+    age_1: int
+    age_2: int
+    age_1_cash_value: int
+    age_2_cash_value: int
+
 class FormData(BaseModel):
     isCorporateCustomer: bool
     isPolicyHolder: bool
@@ -80,11 +87,14 @@ class FormData(BaseModel):
     premiumPaymentMethod: str
     useInflation: bool
     proposalLanguage: str
+    selectedAge1: int
+    selectedAge2: int
 
 class OtpRequest(BaseModel):
     session_id: str
     otp: str
     calculation_data: CalculationData
+    cashValueInfo: CashValueInfo
     formData: FormData
 
 class RetryRequest(BaseModel):
@@ -167,7 +177,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         raise
 
 # Helper function to perform checkout and capture PDF from network
-def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, calculation_data: Dict, cash_value_info: Dict):
     try:
         # Click "保費摘要"
         policy_field = WebDriverWait(driver, 30).until(
@@ -314,11 +324,19 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             log_message("從PDF檔案中提取文本內容", queue, loop)
 
             # DeepSeek API call
+            age_1 = cash_value_info['age_1']
+            age_2 = cash_value_info['age_2']
+            print("age_1:", age_1)
+            print("age_2:", age_2)
+            
+            currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
+            age_1_cash_value = 0
+            age_2_cash_value = 0
             system_prompt = (
-                "幫我在「款項提取說明－退保價值」表格中找出65歲和85歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
-                "如果找到的數值是美元,就要使用7.85匯率轉為港元, 答案就顯示美元及港元"
-                "答案要儘量簡單直接輸出兩句, 不要隔行:'65歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
-                "'85歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
+                f"幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
+                f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
+                f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
+                f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
                 "數值前面要加上2個*號"
                 "最后要講出答案是從哪一頁找到"
             )
@@ -335,6 +353,24 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             )
             ai_response = response.choices[0].message.content
             
+            print("currency_rate",currency_rate)
+            print("ai_response",ai_response)
+            pattern = r'HKD(\d{1,3}(?:,\d{3})*)'
+
+            # Find all matches
+            matches = re.findall(pattern, ai_response)
+            if len(matches) >= 2:
+                age_1_cash_value = int(matches[0].replace(',', ''))
+                age_2_cash_value = int(matches[1].replace(',', ''))
+            else:
+                log_message("未能從AI回應中提取足夠的HKD值", queue, loop)
+                age_1_cash_value = 0
+                age_2_cash_value = 0
+
+            # Print results (for verification)
+            
+            print("age_1_cash_value:", age_1_cash_value)
+            print("age_2_cash_value:", age_2_cash_value)
             lines = ai_response.splitlines()
                 
             # Send each line using log_message
@@ -346,20 +382,26 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             # driver.switch_to.window(driver.window_handles[0])
             log_message("建議書已成功建立及下載到計劃書系統中!", queue, loop)
 
-            return {"status": "success", "ai_response": ai_response}
+            return {
+                "status": "success",
+                "age_1_cash_value": age_1_cash_value,
+                "age_2_cash_value": age_2_cash_value
+            }
 
     except TimeoutException as e:
         log_message(f"Error: {str(e)}", queue, loop)
         raise Exception(str(e))
 
 # Worker to verify OTP and fill form
-def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_data: Dict, cash_value_info: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     session_data = sessions.get(session_id)
     if not session_data or "driver" not in session_data:
         log_message("Invalid session ID", queue, loop)
         raise ValueError("Invalid session ID")
     driver = session_data["driver"]
     session_data["form_data"] = form_data
+    session_data["calculation_data"] = calculation_data
+    session_data["cash_value_info"] = cash_value_info
 
     try:
         otp = otp.strip()
@@ -714,7 +756,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
                 log_message(f"已填 year {entry['yearNumber']} ({premium}) in field {input_index}", queue, loop)
                 time.sleep(0.2)
 
-        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop)
+        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop, calculation_data, cash_value_info)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
@@ -736,6 +778,8 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         raise ValueError("Invalid session ID")
     driver = session_data["driver"]
     form_data = session_data["form_data"]
+    calculation_data = session_data["calculation_data"]
+    cash_value_info = session_data["cash_value_info"]
 
     try:
         basicPlan_field = WebDriverWait(driver, TIMEOUT).until(
@@ -751,7 +795,8 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         nominalAmount_field.send_keys(new_notional_amount)
         log_message(f"新的名義金額 已填上 {new_notional_amount}", queue, loop)
 
-        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop)
+        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop, calculation_data, cash_value_info)
+        
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
@@ -815,6 +860,7 @@ async def verify_otp(request: OtpRequest):
             request.otp,
             request.calculation_data.dict(),
             request.formData.dict(),
+            request.cashValueInfo.dict(),
             queue,
             loop
         )
@@ -835,7 +881,8 @@ async def retry_notional(request: RetryRequest):
             session_id,
             request.new_notional_amount,
             queue,
-            loop
+            loop,
+            
         )
         return result
     except Exception as e:
