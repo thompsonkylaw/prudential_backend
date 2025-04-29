@@ -337,7 +337,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
                 f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
                 f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
-                "數值前面要加上2個*號及HKD, 更加要有','作為貨幣模式"
+                "數值前面要加上2個*號"
                 "最后要講出答案是從哪一頁找到"
             )
             messages = [
@@ -716,7 +716,6 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             if "美元" in form_data['currency']:
                 currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
                 premium = round(premium / currency_rate, 0)
-                premium = 1000
             every_year_amount_field.send_keys(str(int(premium)))
         log_message(f"每年提取金額 已填 with ID {field_ids['every_year_amount']}", queue, loop)
 
@@ -734,45 +733,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         )
         driver.execute_script("arguments[0].click();", enter_button)
         log_message("加入 已點選, 請稍後... ", queue, loop)
-        
-        time.sleep(3)
-        try:
-            print("startYearNumber", startYearNumber)
-            age = int(calculation_data['inputs'].get('age', ''))
-            print("age", age)
-            searchAge = int(startYearNumber) + age
-            print("searchAge", searchAge)
-            
-            # Convert numbers to strings for XPath
-            start_year_str = str(startYearNumber)
-            search_age_str = str(searchAge)
-            
-            input_element = driver.find_element(
-                By.XPATH, 
-                f"//div[normalize-space(text())='{start_year_str}/{search_age_str}']/following::input[starts-with(@id, 'mat-input-') and @inputmode='numeric']"
-            )
-            # Step 2: Get the ID of the located element
-            input_id = input_element.get_attribute("id")
-            print("input_id_1:", input_id)
-            
-            # Extract the numeric part from 'mat-input-25'
-            id = int(input_id.split('-')[-1])
-            print("input_id_2:", str(id))
-            
-            # Add 3 to get the desired ID
-            id = id + 3
-            print("input_id_3:", str(id))
 
-            # Optional: Print the ID to verify
-           
-            log_message(f"元素的 ID 是 {id}", queue, loop)
-
-        except Exception as e:
-            print(f"Error finding input element: {e}")
-            return None
-           
-       
-        
         if not form_data['useInflation']:
             sorted_data = sorted(calculation_data['processedData'], key=lambda x: x['yearNumber'])
             start_index = next((i for i, item in enumerate(sorted_data) if item['yearNumber'] == int(startYearNumber)), None)
@@ -781,20 +742,18 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             end_index = start_index + int(numberOfWithDrawYear)
             withdrawal_data = sorted_data[start_index:end_index]
             currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
-            
             for idx, entry in enumerate(withdrawal_data):
                 premium = entry['medicalPremium']
                 if "美元" in form_data['currency']:
                     premium = round(premium / currency_rate, 0)
-                input_index = id + (idx * 5)#####################################
+                input_index = 28 + (idx * 5)
                 xpath = f'//*[@id="mat-input-{input_index}"]'
                 input_field = WebDriverWait(driver, 20).until(
                     EC.visibility_of_element_located((By.XPATH, xpath))
                 )
                 input_field.clear()
                 input_field.send_keys(str(int(premium)))
-                inputed_id = input_field.get_attribute("id")
-                log_message(f"已填 year {entry['yearNumber']} ({premium}) in field index = {input_index} and inputed_id = {inputed_id}", queue, loop)
+                log_message(f"已填 year {entry['yearNumber']} ({premium}) in field {input_index}", queue, loop)
                 time.sleep(0.2)
 
         result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop, calculation_data, cash_value_info)
