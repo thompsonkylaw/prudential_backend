@@ -288,7 +288,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 log_message("列印建議書2 按鍵 已成功點選", queue, loop)
             
             log_message("列印中, 請稍後..." , queue, loop)
-            time.sleep(15)
+            time.sleep(20)
             
             # Capture PDF content from network response
             pdf_content = None
