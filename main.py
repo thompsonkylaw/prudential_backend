@@ -40,7 +40,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True    # Set to True in production on Railway.app
+IsProduction = False    # Set to True in production on Railway.app
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -502,6 +502,9 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         basicPlan_field.click()
         log_message("基本計劃 頁 已點選", queue, loop)
 
+
+        #########################################
+
         basicPlan_select_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '基本計劃')]/following-sibling::mat-form-field//mat-select"))
         )
@@ -716,7 +719,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             if "美元" in form_data['currency']:
                 currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
                 premium = round(premium / currency_rate, 0)
-                premium = 1000
+               
             every_year_amount_field.send_keys(str(int(premium)))
         log_message(f"每年提取金額 已填 with ID {field_ids['every_year_amount']}", queue, loop)
 
@@ -727,7 +730,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             )
             inflation_field.clear()
             inflation_field.send_keys(inflation_rate)
-            log_message(f"通货膨胀率 已填 with ID {field_ids['inflation']}", queue, loop)
+            log_message(f"通貨膨脹率 已填 with ID {field_ids['inflation']}", queue, loop)
 
         enter_button = WebDriverWait(driver, TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, "//span[text()='加入']"))
