@@ -146,36 +146,36 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     
     xpath = "//label[contains(text(), '進階選項')]"
     try:
-        print("Here 1")
+        log_func("Here 11")
         # Wait for the element to be visible and interactable
         element = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, xpath))
         )
-        print("Here 2")
+        log_func("Here 12")
         # Scroll to the element
         driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
         # Wait again to ensure the element is still clickable after scrolling
         WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, xpath))
         )
-        print("Here 3")
+        log_func("Here 13")
         # Optional: Small delay to allow any animations to settle
         time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
         # Attempt to click the element
         element.click()
-        print("Here 4")
+        log_func("Here 14")
         log_func("進階選項 已點選")
 
     except ElementClickInterceptedException:
-        print("Here 5")
+        log_func("Here 15")
         log_func("Click intercepted, attempting JavaScript click...")
         # Retry with JavaScript click
         driver.execute_script("arguments[0].click();", element)
-        print("Here 6")
+        log_func("Here 16")
         log_func("JS Click successful")
 
     except TimeoutException:
-        print("Here 7")
+        log_func("Here 17")
         log_func("Element not found or not clickable within timeout")
         raise
     
