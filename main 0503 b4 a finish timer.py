@@ -35,6 +35,7 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 GROK2_API_KEY = os.getenv("GROK2_API_KEY")
 
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Environment flag
 IsProduction = False    # Set to True in production on Railway.app
 
-UseGrok = True
+UseGrok = False
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -130,10 +131,12 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
+        # Enable performance logging
         options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+        # Remove download directory settings since we won't save to disk
         prefs = {
             "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": True,
+            "plugins.always_open_pdf_externally": True,  # Still force PDF download behavior
         }
         options.add_experimental_option("prefs", prefs)
 
@@ -179,18 +182,20 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, que
         raise
 
 # Helper function to perform checkout and capture PDF from network
-def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, calculation_data: Dict, cash_value_info: Dict, session_id: str):
+def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, calculation_data: Dict, cash_value_info: Dict):
     try:
+        # Click "保費摘要"
         policy_field = WebDriverWait(driver, 30).until(
             EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
         )
         policy_field.click()
         log_message("保費摘要 已點選", queue, loop)
 
+        # Custom condition to check for system message or view button
         class EitherElementLocated:
             def __init__(self, locator1, locator2):
-                self.locator1 = locator1
-                self.locator2 = locator2
+                self.locator1 = locator1  # System messages
+                self.locator2 = locator2  # View button
 
             def __call__(self, driver):
                 system_messages = driver.find_elements(*self.locator1)
@@ -228,15 +233,18 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             log_message("名義金額而獲通過", queue, loop)
             log_message("檢視建議書 已點選", queue, loop)
 
+            # Enter filename in save input field
             save_input_field = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//input[@matinput and @maxlength='80']"))
             )
             tz_gmt8 = ZoneInfo("Asia/Shanghai")
             timestamp = datetime.now(tz_gmt8).strftime("%Y%m%d%H%M")
+            
             filename = f"{basicPlan_}_{timestamp}"
             save_input_field.clear()
             save_input_field.send_keys(filename)
 
+            # Click save button
             save_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//mat-dialog-container//div[@class='dialog-buttons']/button[contains(., '儲存')]"))
             )
@@ -247,6 +255,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 ActionChains(driver).move_to_element(save_button).pause(0.5).click().perform()
                 log_message("儲存2 已成功點選", queue, loop)
 
+            # Select proposal language
             if str(form_data['proposalLanguage']) == "zh":
                 proposal_language_radio = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
@@ -266,12 +275,14 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 proposal_language_radio.click()
                 log_message(f"建議書語言選擇按鈕 = {str(form_data['proposalLanguage'])}", queue, loop)
 
+            # Check "所有年期"
             label = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//label[.//div[text()='所有年期']]"))
             )
             label.click()
             log_message("所有年期 已成功點選", queue, loop)
 
+            # Click print button to trigger PDF download
             print_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//cpos-button[.//span[contains(., '列印建議書')]]//button[contains(@class, 'agent-btn')]"))
             )
@@ -284,35 +295,43 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             
             log_message("列印中, 請稍後..." , queue, loop)
             
+            # Initialize variables
             pdf_request_id = None
             pdf_content = None
             start_time = time.time()
 
+            # Poll network logs for up to 60 seconds
             while time.time() - start_time < 60:
                 logs = driver.get_log('performance')
                 for log in logs:
                     message = json.loads(log['message'])['message']
+                    # Check for PDF response
                     if message['method'] == 'Network.responseReceived':
                         response = message['params']['response']
                         if response['mimeType'] == 'application/pdf':
                             pdf_request_id = message['params']['requestId']
+                            # Note: If multiple PDFs are possible, you could add URL checks here
+                    # Check if the PDF response has finished loading
                     elif message['method'] == 'Network.loadingFinished' and pdf_request_id is not None:
                         if message['params']['requestId'] == pdf_request_id:
+                            # Retrieve the response body now that it’s fully loaded
                             body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': pdf_request_id})
                             if body['base64Encoded']:
                                 pdf_content = base64.b64decode(body['body'])
                             else:
                                 pdf_content = body['body'].encode()
-                            break
+                            break  # Exit the for loop
                 if pdf_content:
-                    break
-                time.sleep(0.1)
+                    break  # Exit the while loop once PDF content is captured
+                time.sleep(0.1)  # Poll every 0.1 seconds for faster response
 
+            # Raise an exception if the PDF isn’t found within 60 seconds
             if pdf_content is None:
                 raise TimeoutException("PDF response not found within timeout")
 
             log_message("PDF檔案從計劃書系統獲取中", queue, loop)
 
+            # Process PDF content in memory
             pdf_file = io.BytesIO(pdf_content)
             with pdfplumber.open(pdf_file) as pdf:
                 text = ""
@@ -320,6 +339,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                     text += page.extract_text() or ""
             log_message("從PDF檔案中提取文本內容", queue, loop)
 
+            # DeepSeek API call
             age_1 = cash_value_info['age_1']
             age_2 = cash_value_info['age_2']
             print("age_1:", age_1)
@@ -332,6 +352,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             log_message(f"基本儲蓄計劃是={basicPlan_}", queue, loop)
             
             system_prompt = (
+                
                 f"如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
                 f"但如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(A) + (B) +(C) + (D)」的數值,"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
@@ -345,6 +366,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 {"role": "user", "content": text}
             ]
             log_message("AI 解讀計劃書中, 請稍後...", queue, loop)
+            # client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
             
             if UseGrok:
                 api_key = GROK2_API_KEY
@@ -357,16 +379,21 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 model = "deepseek-chat"
                 log_message(f"model=C", queue, loop)
             
+                
             client = OpenAI(api_key=api_key, base_url=base_url)
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
+                # stream=False
             )
             ai_response = response.choices[0].message.content
             
             print("currency_rate",currency_rate)
             print("ai_response",ai_response)
+            # pattern = r'HKD(\d{1,3}(?:,\d{3})*)'
             pattern = r'(?:HK?D?|K)\s*(\d[\d,]*)' 
+
+            # Find all matches
             matches = re.findall(pattern, ai_response)
             if len(matches) >= 2:
                 age_1_cash_value = int(matches[0].replace(',', ''))
@@ -375,23 +402,23 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 log_message("未能從AI回應中提取足夠的HKD值", queue, loop)
                 age_1_cash_value = 0
                 age_2_cash_value = 0
+
+            # Print results (for verification)
+            
             
             log_message(f"age_1_cash_value={age_1_cash_value}", queue, loop)
             log_message(f"age_2_cash_value={age_2_cash_value}", queue, loop)
             
             lines = ai_response.splitlines()
+                
+            # Send each line using log_message
             for line in lines:
                 log_message(f"AI 回覆 : {line}", queue, loop)
                 
+            # Clean up
+            # driver.close()
+            # driver.switch_to.window(driver.window_handles[0])
             log_message("建議書已成功建立及下載到計劃書系統中!", queue, loop)
-
-            # Stop timer and log elapsed time
-            end_time = time.time()
-            start_time = sessions[session_id]['start_time']
-            elapsed_time = end_time - start_time
-            minutes, seconds = divmod(elapsed_time, 60)
-            timer_value = f"{int(minutes):02d}:{int(seconds):02d}"
-            log_message(f"所需時間 = {timer_value}", queue, loop)
 
             return {
                 "status": "success",
@@ -429,10 +456,6 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         )
         driver.execute_script("arguments[0].click();", otp_continual_button)
         log_message("繼續 已點選, 請稍後...", queue, loop)
-
-        # Start the timer
-        start_time = time.time()
-        sessions[session_id]['start_time'] = start_time
 
         try:
             WebDriverWait(driver, 20).until(
@@ -517,6 +540,8 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         basicPlan_field.click()
         log_message("基本計劃 頁 已點選", queue, loop)
 
+
+        #########################################
         def log_func(message):
             log_message(message, queue, loop)
             
@@ -527,7 +552,9 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
         elif 'LV' in basicPlan_:
             fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT)     
 
-        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop, calculation_data, cash_value_info, session_id)
+        
+
+        result = perform_checkout(driver, form_data['notionalAmount'], form_data, queue, loop, calculation_data, cash_value_info)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
@@ -566,7 +593,7 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         nominalAmount_field.send_keys(new_notional_amount)
         log_message(f"新的名義金額 已填上 {new_notional_amount}", queue, loop)
 
-        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop, calculation_data, cash_value_info, session_id)
+        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop, calculation_data, cash_value_info)
         
         if result["status"] == "success":
             driver.quit()
@@ -653,6 +680,7 @@ async def retry_notional(request: RetryRequest):
             request.new_notional_amount,
             queue,
             loop,
+            
         )
         return result
     except Exception as e:
