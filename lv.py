@@ -30,7 +30,7 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     
     if 'LV' in str(form_data['basicPlan']):
         # log_func("Here LV")
-        for _ in range(8):
+        for _ in range(7):
             time.sleep(0.2)
             basicPlan_select_field.send_keys(Keys.ARROW_DOWN)
 
