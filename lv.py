@@ -153,7 +153,7 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
         )
         log_func("Here 12")
         # Scroll to the element
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field)
         # Wait again to ensure the element is still clickable after scrolling
         WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, xpath))
@@ -189,7 +189,7 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
         )
         log_func("Here 22")
         # Scroll to the element
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field_2)
         # Wait again to ensure the element is still clickable after scrolling
         WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, xpath))
