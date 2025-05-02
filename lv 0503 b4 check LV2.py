@@ -28,46 +28,16 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     basicPlan_ = str(form_data['basicPlan'])
     # log_func(f"basicPlan = {basicPlan_}")
     time.sleep(1)
-    # if 'LV' in str(form_data['basicPlan']):
-        # # log_func("Here LV")
-        # for _ in range(7):
-        #     time.sleep(0.2)
-        #     basicPlan_select_field.send_keys(Keys.ARROW_DOWN)
-
-        # # Send enter to select the option
-        # basicPlan_select_field.send_keys(Keys.ENTER)
-        # # log_func("Here LV2")
-        # log_func("基本計劃 LV2 選項 已點選")
-        
-    # Target text to match
-    target_text = "赤霞珠終身壽險計劃2 基本人壽保障選項(LV2)"
-    max_attempts = 20  # Limit to prevent infinite loop
-
-    for _ in range(max_attempts):
-        try:
-            # Find the active option
-            active_option = driver.find_element(By.CSS_SELECTOR, "mat-option.mat-mdc-option-active")
-            # Extract the text from the span inside the active option
-            current_text = active_option.find_element(By.CSS_SELECTOR, "span.mdc-list-item__primary-text").text.strip()
-            print(f"Current text: '{current_text}'")  # Debugging output
-            
-            # Check if the current text matches the target
-            if target_text in current_text:
-                active_option.click()  # Click the option directly instead of sending ENTER
-                log_func("基本計劃 LV2 選項 已點選")
-                print(f"Selected option: {target_text}")
-                break
-            else:
-                # Move to the next option
-                basicPlan_select_field.send_keys(Keys.ARROW_DOWN)
-                time.sleep(0.2)  # Small delay to allow UI to update
-        except Exception as e:
-            print(f"Error: {e}")
-            current_text = ""  # Fallback if something goes wrong
-            basicPlan_select_field.send_keys(Keys.ARROW_DOWN)
+    if 'LV' in str(form_data['basicPlan']):
+        # log_func("Here LV")
+        for _ in range(7):
             time.sleep(0.2)
-    else:
-        print(f"Could not find matching option: {target_text}")
+            basicPlan_select_field.send_keys(Keys.ARROW_DOWN)
+
+        # Send enter to select the option
+        basicPlan_select_field.send_keys(Keys.ENTER)
+        # log_func("Here LV2")
+        log_func("基本計劃 LV2 選項 已點選")
     
     numberOfYear_select_field = WebDriverWait(driver, TIMEOUT).until(
         EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '保費繳付期')]/following-sibling::mat-form-field//mat-select"))
