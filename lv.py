@@ -27,7 +27,7 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     
     basicPlan_ = str(form_data['basicPlan'])
     # log_func(f"basicPlan = {basicPlan_}")
-    
+    time.sleep(1)
     if 'LV' in str(form_data['basicPlan']):
         # log_func("Here LV")
         for _ in range(7):
