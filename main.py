@@ -74,6 +74,7 @@ class CashValueInfo(BaseModel):
     age_2: int
     age_1_cash_value: int
     age_2_cash_value: int
+    annual_premium: int
 
 class FormData(BaseModel):
     isCorporateCustomer: bool
@@ -185,7 +186,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
         )
         policy_field.click()
-        log_message("保費摘要 已點選", queue, loop)
+        log_message("保費摘要 已點選, 請稍後...", queue, loop)
 
         class EitherElementLocated:
             def __init__(self, locator1, locator2):
@@ -328,17 +329,22 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
             age_1_cash_value = 0
             age_2_cash_value = 0
+            annual_premium = 0
+            
             
             log_message(f"基本儲蓄計劃是={basicPlan_}", queue, loop)
             
             system_prompt = (
-                f"如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
+                f"首先幫我在第1頁的資料表中找出第一項基本計劃的投保時每年保費的數值"
+                f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元 **USDxxxxxx** 及 **HKDxxxxxx**"
+                f"之後如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
                 f"但如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(A) + (B) +(C) + (D)」的數值,"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
                 f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
                 f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
+                "答案要使用點格式"
                 "數值前面要加上2個*號及HKD, 更加要有','作為貨幣模式"
-                "最后要講出答案是從哪一頁找到"
+                "最后答案用要講出答案是從哪一頁找到"
             )
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -350,12 +356,12 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 api_key = GROK2_API_KEY
                 base_url="https://api.x.ai/v1"
                 model = "grok-3-beta"
-                log_message(f"model=X", queue, loop)
+                log_message(f"大模型=X", queue, loop)
             else: 
                 api_key = DEEPSEEK_API_KEY   
                 base_url="https://api.deepseek.com"
                 model = "deepseek-chat"
-                log_message(f"model=C", queue, loop)
+                log_message(f"大模型=C", queue, loop)
             
             client = OpenAI(api_key=api_key, base_url=base_url)
             response = client.chat.completions.create(
@@ -368,16 +374,20 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             print("ai_response",ai_response)
             pattern = r'(?:HK?D?|K)\s*(\d[\d,]*)' 
             matches = re.findall(pattern, ai_response)
-            if len(matches) >= 2:
-                age_1_cash_value = int(matches[0].replace(',', ''))
-                age_2_cash_value = int(matches[1].replace(',', ''))
+            
+            if len(matches) >= 3:
+                annual_premium =   int(matches[0].replace(',', ''))
+                age_1_cash_value = int(matches[1].replace(',', ''))
+                age_2_cash_value = int(matches[2].replace(',', ''))
             else:
                 log_message("未能從AI回應中提取足夠的HKD值", queue, loop)
+                annual_premium = 0
                 age_1_cash_value = 0
                 age_2_cash_value = 0
-            
-            log_message(f"age_1_cash_value={age_1_cash_value}", queue, loop)
-            log_message(f"age_2_cash_value={age_2_cash_value}", queue, loop)
+                
+            log_message(f"投保時每年保費={annual_premium}", queue, loop)
+            log_message(f"age_1_退保價值總額={age_1_cash_value}", queue, loop)
+            log_message(f"age_2_退保價值總額={age_2_cash_value}", queue, loop)
             
             lines = ai_response.splitlines()
             for line in lines:
@@ -396,7 +406,8 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             return {
                 "status": "success",
                 "age_1_cash_value": age_1_cash_value,
-                "age_2_cash_value": age_2_cash_value
+                "age_2_cash_value": age_2_cash_value,
+                "annual_premium": annual_premium
             }
 
     except TimeoutException as e:
