@@ -87,7 +87,7 @@ class FormData(BaseModel):
     basicPlan: str
     currency: str
     notionalAmount: str
-    premiumPaymentPeriod: str
+    premiumPaymentPeriod: str 
     premiumPaymentMethod: str
     useInflation: bool
     proposalLanguage: str
@@ -306,7 +306,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                             break
                 if pdf_content:
                     break
-                time.sleep(0.1)
+                time.sleep(2)
 
             if pdf_content is None:
                 raise TimeoutException("PDF response not found within timeout")
