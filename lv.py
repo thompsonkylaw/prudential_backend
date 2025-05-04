@@ -132,7 +132,7 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     )
     nominalAmount_field.clear()
     nominalAmount_field.send_keys(str(form_data['notionalAmount']))
-    log_func("名義金額  輸入欄已填")
+    log_func("名義金額 輸入欄已填")
 
     if '每年' not in form_data['premiumPaymentMethod']:
         premiumPaymentMethod_select_field = WebDriverWait(driver, TIMEOUT).until(

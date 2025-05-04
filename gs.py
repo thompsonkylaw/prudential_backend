@@ -96,7 +96,7 @@ def fill_GS_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     )
     nominalAmount_field.clear()
     nominalAmount_field.send_keys(str(form_data['notionalAmount']))
-    log_func("名義金額  輸入欄已填")
+    log_func("名義金額 輸入欄已填")
 
     if '每年' not in form_data['premiumPaymentMethod']:
         premiumPaymentMethod_select_field = WebDriverWait(driver, TIMEOUT).until(
@@ -128,12 +128,47 @@ def fill_GS_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     )
     supplimentary_field.click()
     log_func("補充利益說明頁 已點選")
+    
+    xpath = "//label[contains(text(), '是')]"
+    try:
+        # log_func("Here 21")
+        # Wait for the element to be visible and interactable
+        you_hope_field_2 = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, xpath))
+        )
+        # log_func("Here 22")
+        # Scroll to the element
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field_2)
+        # Wait again to ensure the element is still clickable after scrolling
+        WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, xpath))
+        )
+        # log_func("Here 23")
+        # Optional: Small delay to allow any animations to settle
+        time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
+        # Attempt to click the element
+        you_hope_field_2.click()
+        # log_func("Here 24")
+        log_func("是 已點選")
 
-    you_hope_field = WebDriverWait(driver, TIMEOUT).until(
-        EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '是')]"))
-    )
-    you_hope_field.click()
-    log_func("提取說明 已點選")
+    except ElementClickInterceptedException:
+        # log_func("Here 25")
+        log_func("Click intercepted, attempting JavaScript click...")
+        # Retry with JavaScript click
+        driver.execute_script("arguments[0].click();", you_hope_field_2)
+        # log_func("Here 26")
+        log_func("JS Click successful")
+
+    except TimeoutException:
+        # log_func("Here 27")
+        log_func("Element not found or not clickable within timeout")
+        raise
+    
+    # you_hope_field = WebDriverWait(driver, TIMEOUT).until(
+    #     EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), '是')]"))
+    # )
+    # you_hope_field.click()
+    # log_func("提取說明 已點選")
 
     xpath = "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"
     try:

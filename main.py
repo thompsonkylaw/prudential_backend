@@ -310,7 +310,27 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 time.sleep(2)
 
             if pdf_content is None:
-                raise TimeoutException("PDF response not found within timeout")
+                # raise TimeoutException("PDF response not found within timeout")
+                start_time = time.time()
+                while time.time() - start_time < 60:  # Wait up to 60 seconds
+                    logs = driver.get_log('performance')
+                    for log in logs:
+                        message = json.loads(log['message'])['message']
+                        if message['method'] == 'Network.responseReceived':
+                            response = message['params']['response']
+                            if response['mimeType'] == 'application/pdf':
+                                request_id = message['params']['requestId']
+                                body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
+                                if body['base64Encoded']:
+                                    pdf_content = base64.b64decode(body['body'])
+                                else:
+                                    pdf_content = body['body'].encode()
+                                break
+                    if pdf_content:
+                        break
+                    time.sleep(1)
+                else:
+                    raise TimeoutException("PDF response not found within timeout")
 
             log_message("PDF檔案從計劃書系統獲取中", queue, loop)
 
@@ -356,6 +376,9 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                 api_key = GROK2_API_KEY
                 base_url="https://api.x.ai/v1"
                 model = "grok-3-beta"
+                # model = "grok-3-mini-latest" 
+                # model = "grok-3-mini-fast-latest" 
+                
                 log_message(f"大模型=X", queue, loop)
             else: 
                 api_key = DEEPSEEK_API_KEY   
