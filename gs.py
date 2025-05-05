@@ -25,7 +25,7 @@ def fill_GS_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     log_func("基本計劃 下拉式選單已點選")
     
     basicPlan = str(form_data['basicPlan'])
-    log_func(f"basicPlan = {basicPlan}")
+    print(f"basicPlan = {basicPlan}")
     if 'GS' in str(form_data['basicPlan']):
         basicPlan_option_field = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "//div[@id='mat-select-4-panel']//mat-option[.//span[contains(text(), '(GS)')]]"))

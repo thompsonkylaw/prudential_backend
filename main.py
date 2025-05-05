@@ -307,10 +307,11 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                             break
                 if pdf_content:
                     break
-                time.sleep(2)
+                time.sleep(5)
 
             if pdf_content is None:
                 # raise TimeoutException("PDF response not found within timeout")
+                log_message("raise TimeoutException", queue, loop)
                 start_time = time.time()
                 while time.time() - start_time < 60:  # Wait up to 60 seconds
                     logs = driver.get_log('performance')
@@ -555,7 +556,7 @@ def verify_otp_worker(session_id: str, otp: str, calculation_data: Dict, form_da
             log_message(message, queue, loop)
             
         basicPlan_ = str(form_data['basicPlan'])
-        log_message(f"basicPlan = {basicPlan_}", queue, loop)
+        print(f"basicPlan = {basicPlan_}")
         if 'GS' in basicPlan_:
             fill_GS_form(driver, form_data, calculation_data, log_func, TIMEOUT)
         elif 'LV' in basicPlan_:
