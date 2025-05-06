@@ -285,21 +285,67 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
             
             log_message("列印中, 請稍後..." , queue, loop)
             
-            pdf_request_id = None
+            # pdf_request_id = None
+            # pdf_content = None
+            # start_time = time.time()
+
+            # while time.time() - start_time < 60:
+            #     logs = driver.get_log('performance')
+            #     for log in logs:
+            #         message = json.loads(log['message'])['message']
+            #         if message['method'] == 'Network.responseReceived':
+            #             response = message['params']['response']
+            #             if response['mimeType'] == 'application/pdf':
+            #                 pdf_request_id = message['params']['requestId']
+            #         elif message['method'] == 'Network.loadingFinished' and pdf_request_id is not None:
+            #             if message['params']['requestId'] == pdf_request_id:
+            #                 body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': pdf_request_id})
+            #                 if body['base64Encoded']:
+            #                     pdf_content = base64.b64decode(body['body'])
+            #                 else:
+            #                     pdf_content = body['body'].encode()
+            #                 break
+            #     if pdf_content:
+            #         break
+            #     time.sleep(5)
+
+            # if pdf_content is None:
+            #     # raise TimeoutException("PDF response not found within timeout")
+            #     log_message("raise TimeoutException", queue, loop)
+            #     start_time = time.time()
+            #     while time.time() - start_time < 60:  # Wait up to 60 seconds
+            #         logs = driver.get_log('performance')
+            #         for log in logs:
+            #             message = json.loads(log['message'])['message']
+            #             if message['method'] == 'Network.responseReceived':
+            #                 response = message['params']['response']
+            #                 if response['mimeType'] == 'application/pdf':
+            #                     request_id = message['params']['requestId']
+            #                     body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
+            #                     if body['base64Encoded']:
+            #                         pdf_content = base64.b64decode(body['body'])
+            #                     else:
+            #                         pdf_content = body['body'].encode()
+            #                     break
+            #         if pdf_content:
+            #             break
+            #         time.sleep(1)
+            #     else:
+            #         raise TimeoutException("PDF response not found within timeout")
+            time.sleep(20)
+            
+            # Capture PDF content from network response
             pdf_content = None
             start_time = time.time()
-
-            while time.time() - start_time < 60:
+            while time.time() - start_time < 60:  # Wait up to 60 seconds
                 logs = driver.get_log('performance')
                 for log in logs:
                     message = json.loads(log['message'])['message']
                     if message['method'] == 'Network.responseReceived':
                         response = message['params']['response']
                         if response['mimeType'] == 'application/pdf':
-                            pdf_request_id = message['params']['requestId']
-                    elif message['method'] == 'Network.loadingFinished' and pdf_request_id is not None:
-                        if message['params']['requestId'] == pdf_request_id:
-                            body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': pdf_request_id})
+                            request_id = message['params']['requestId']
+                            body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
                             if body['base64Encoded']:
                                 pdf_content = base64.b64decode(body['body'])
                             else:
@@ -307,31 +353,9 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: async
                             break
                 if pdf_content:
                     break
-                time.sleep(5)
-
-            if pdf_content is None:
-                # raise TimeoutException("PDF response not found within timeout")
-                log_message("raise TimeoutException", queue, loop)
-                start_time = time.time()
-                while time.time() - start_time < 60:  # Wait up to 60 seconds
-                    logs = driver.get_log('performance')
-                    for log in logs:
-                        message = json.loads(log['message'])['message']
-                        if message['method'] == 'Network.responseReceived':
-                            response = message['params']['response']
-                            if response['mimeType'] == 'application/pdf':
-                                request_id = message['params']['requestId']
-                                body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
-                                if body['base64Encoded']:
-                                    pdf_content = base64.b64decode(body['body'])
-                                else:
-                                    pdf_content = body['body'].encode()
-                                break
-                    if pdf_content:
-                        break
-                    time.sleep(1)
-                else:
-                    raise TimeoutException("PDF response not found within timeout")
+                time.sleep(1)
+            else:
+                raise TimeoutException("PDF response not found within timeout")
 
             log_message("PDF檔案從計劃書系統獲取中", queue, loop)
 
