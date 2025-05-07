@@ -225,18 +225,18 @@ def fill_GS_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     #     log_func("Click intercepted, attempting JavaScript click...")
     #     driver.execute_script("arguments[0].click();", element)
     #     log_func("JS Click successful")
-
-    withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
-        EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='請選擇您的提取款項由']]/following-sibling::mat-radio-group//label[.//span[text()='保單年度']]"))
-    )
-    withdraw_start_from.click()
-    log_func("保單年度 已點選")
-
-    continue_button = WebDriverWait(driver, TIMEOUT).until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(., '繼續')]"))
-    )
-    continue_button.click()
-    log_func("繼續 已點選")
+    sc_click(driver,log_func,"//mat-label[span[text()='請選擇您的提取款項由']]/following-sibling::mat-radio-group//label[.//span[text()='保單年度']]", "保單年度 已點選")
+    # withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
+    #     EC.element_to_be_clickable((By.XPATH, "//mat-label[span[text()='請選擇您的提取款項由']]/following-sibling::mat-radio-group//label[.//span[text()='保單年度']]"))
+    # )
+    # withdraw_start_from.click()
+    # log_func("保單年度 已點選")
+    continue_button = sc_click(driver,log_func,"//button[contains(., '繼續')]", "繼續 已點選")
+    # continue_button = WebDriverWait(driver, TIMEOUT).until(
+    #     EC.element_to_be_clickable((By.XPATH, "//button[contains(., '繼續')]"))
+    # )
+    # continue_button.click()
+    # log_func("繼續 已點選")
 
     WebDriverWait(driver, TIMEOUT).until(EC.staleness_of(continue_button))
     time.sleep(1)

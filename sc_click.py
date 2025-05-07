@@ -26,6 +26,7 @@ def sc_click(driver,log_func,xpath, logMessage):
         you_hope_field_2.click()
         # log_func("Here 24")
         log_func(logMessage)
+        return you_hope_field_2
 
     except ElementClickInterceptedException:
         # log_func("Here 25")
