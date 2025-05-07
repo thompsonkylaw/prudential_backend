@@ -4,6 +4,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, ElementClickInterceptedException
 from selenium.webdriver.common.keys import Keys
+from sc_click import sc_click
 
 def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     def get_medical_premium(processed_data, start_year_number):
@@ -159,12 +160,12 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
             numberOfYear_option_field.click()
             log_func("保費繳付方式 每月")
     
-    
-    supplimentary_field = WebDriverWait(driver, TIMEOUT).until(
-        EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[6]/span[2]/div'))
-    )
-    supplimentary_field.click()
-    log_func("補充利益說明頁 已點選")
+    sc_click(driver,log_func,'/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[6]/span[2]/div', "補充利益說明頁 已點選")
+    # supplimentary_field = WebDriverWait(driver, TIMEOUT).until(
+    #     EC.visibility_of_element_located((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[6]/span[2]/div'))
+    # )
+    # supplimentary_field.click()
+    # log_func("補充利益說明頁 已點選")
     
     
     #############################################################################################################################
@@ -173,77 +174,77 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     # )
     # you_hope_field.click()
     # log_func("進階選項 已點選")
+    sc_click(driver,log_func,"//label[contains(text(), '進階選項')]", "進階選項 已點選")
+    # xpath = "//label[contains(text(), '進階選項')]"
+    # try:
+    #     # log_func("Here 11")
+    #     # Wait for the element to be visible and interactable
+    #     you_hope_field = WebDriverWait(driver, 10).until(
+    #         EC.element_to_be_clickable((By.XPATH, xpath))
+    #     )
+    #     # log_func("Here 12")
+    #     # Scroll to the element
+    #     driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field)
+    #     # Wait again to ensure the element is still clickable after scrolling
+    #     WebDriverWait(driver, 10).until(
+    #         EC.element_to_be_clickable((By.XPATH, xpath))
+    #     )
+    #     # log_func("Here 13")
+    #     # Optional: Small delay to allow any animations to settle
+    #     time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
+    #     # Attempt to click the element
+    #     you_hope_field.click()
+    #     # log_func("Here 14")
+    #     log_func("進階選項 已點選")
+
+    # except ElementClickInterceptedException:
+    #     # log_func("Here 15")
+    #     log_func("Click intercepted, attempting JavaScript click...")
+    #     # Retry with JavaScript click
+    #     driver.execute_script("arguments[0].click();", you_hope_field)
+    #     # log_func("Here 16")
+    #     log_func("JS Click successful")
+
+    # except TimeoutException:
+    #     # log_func("Here 17")
+    #     log_func("Element not found or not clickable within timeout")
+        # raise
     
-    xpath = "//label[contains(text(), '進階選項')]"
-    try:
-        # log_func("Here 11")
-        # Wait for the element to be visible and interactable
-        you_hope_field = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        # log_func("Here 12")
-        # Scroll to the element
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field)
-        # Wait again to ensure the element is still clickable after scrolling
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        # log_func("Here 13")
-        # Optional: Small delay to allow any animations to settle
-        time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
-        # Attempt to click the element
-        you_hope_field.click()
-        # log_func("Here 14")
-        log_func("進階選項 已點選")
+    sc_click(driver,log_func,"//label[contains(text(), '是')]", "是 已點選")
+    # xpath = "//label[contains(text(), '是')]"
+    # try:
+    #     # log_func("Here 21")
+    #     # Wait for the element to be visible and interactable
+    #     you_hope_field_2 = WebDriverWait(driver, 10).until(
+    #         EC.element_to_be_clickable((By.XPATH, xpath))
+    #     )
+    #     # log_func("Here 22")
+    #     # Scroll to the element
+    #     driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field_2)
+    #     # Wait again to ensure the element is still clickable after scrolling
+    #     WebDriverWait(driver, 10).until(
+    #         EC.element_to_be_clickable((By.XPATH, xpath))
+    #     )
+    #     # log_func("Here 23")
+    #     # Optional: Small delay to allow any animations to settle
+    #     time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
+    #     # Attempt to click the element
+    #     you_hope_field_2.click()
+    #     # log_func("Here 24")
+    #     log_func("是 已點選")
 
-    except ElementClickInterceptedException:
-        # log_func("Here 15")
-        log_func("Click intercepted, attempting JavaScript click...")
-        # Retry with JavaScript click
-        driver.execute_script("arguments[0].click();", you_hope_field)
-        # log_func("Here 16")
-        log_func("JS Click successful")
+    # except ElementClickInterceptedException:
+    #     # log_func("Here 25")
+    #     log_func("Click intercepted, attempting JavaScript click...")
+    #     # Retry with JavaScript click
+    #     driver.execute_script("arguments[0].click();", you_hope_field_2)
+    #     # log_func("Here 26")
+    #     log_func("JS Click successful")
 
-    except TimeoutException:
-        # log_func("Here 17")
-        log_func("Element not found or not clickable within timeout")
-        raise
-    
-    
-    xpath = "//label[contains(text(), '是')]"
-    try:
-        # log_func("Here 21")
-        # Wait for the element to be visible and interactable
-        you_hope_field_2 = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        # log_func("Here 22")
-        # Scroll to the element
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", you_hope_field_2)
-        # Wait again to ensure the element is still clickable after scrolling
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        # log_func("Here 23")
-        # Optional: Small delay to allow any animations to settle
-        time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
-        # Attempt to click the element
-        you_hope_field_2.click()
-        # log_func("Here 24")
-        log_func("是 已點選")
-
-    except ElementClickInterceptedException:
-        # log_func("Here 25")
-        log_func("Click intercepted, attempting JavaScript click...")
-        # Retry with JavaScript click
-        driver.execute_script("arguments[0].click();", you_hope_field_2)
-        # log_func("Here 26")
-        log_func("JS Click successful")
-
-    except TimeoutException:
-        # log_func("Here 27")
-        log_func("Element not found or not clickable within timeout")
-        raise
+    # except TimeoutException:
+    #     # log_func("Here 27")
+    #     log_func("Element not found or not clickable within timeout")
+    #     raise
     
     
     
@@ -256,48 +257,48 @@ def fill_LV_form(driver, form_data, calculation_data, log_func, TIMEOUT=120):
     
     
     
+    sc_click(driver,log_func,"//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]", "指定提取金額1 已點選")
     
-    
 
-    xpath = "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"
-    try:
-        # print("Here 31")
-        # Wait for the element to be visible and interactable
-        element = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        # print("Here 32")
-        # Scroll to the element
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
-        # Wait again to ensure the element is still clickable after scrolling
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        # print("Here 33")
-        # Optional: Small delay to allow any animations to settle
-        time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
-        # Attempt to click the element
-        element.click()
-        # print("Here 34")
-        log_func("指定提取金額1 已點選")
+    # xpath = "//mat-label[span[text()='提取選項']]/following-sibling::mat-radio-group//label[span[text()='指定提取金額']]"
+    # try:
+    #     # print("Here 31")
+    #     # Wait for the element to be visible and interactable
+    #     element = WebDriverWait(driver, 10).until(
+    #         EC.element_to_be_clickable((By.XPATH, xpath))
+    #     )
+    #     # print("Here 32")
+    #     # Scroll to the element
+    #     driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
+    #     # Wait again to ensure the element is still clickable after scrolling
+    #     WebDriverWait(driver, 10).until(
+    #         EC.element_to_be_clickable((By.XPATH, xpath))
+    #     )
+    #     # print("Here 33")
+    #     # Optional: Small delay to allow any animations to settle
+    #     time.sleep(1)  # Reduced from 5s to 1s to minimize unnecessary wait
+    #     # Attempt to click the element
+    #     element.click()
+    #     # print("Here 34")
+    #     log_func("指定提取金額1 已點選")
 
-    except ElementClickInterceptedException:
-        # print("Here 35")
-        log_func("Click intercepted, attempting JavaScript click...")
-        # Retry with JavaScript click
-        driver.execute_script("arguments[0].click();", element)
-        # print("Here 36")
-        log_func("JS Click successful")
+    # except ElementClickInterceptedException:
+    #     # print("Here 35")
+    #     log_func("Click intercepted, attempting JavaScript click...")
+    #     # Retry with JavaScript click
+    #     driver.execute_script("arguments[0].click();", element)
+    #     # print("Here 36")
+    #     log_func("JS Click successful")
 
-    except TimeoutException:
-        # print("Here 37")
-        log_func("Element not found or not clickable within timeout")
-        raise
+    # except TimeoutException:
+    #     # print("Here 37")
+    #     log_func("Element not found or not clickable within timeout")
+    #     raise
 
-    except Exception as e:
-        # print(f"Here 38: Unexpected error - {str(e)}")
-        log_func(f"Unexpected error during click: {str(e)}")
-        raise
+    # except Exception as e:
+    #     # print(f"Here 38: Unexpected error - {str(e)}")
+    #     log_func(f"Unexpected error during click: {str(e)}")
+    #     raise
     
     
     # withdraw_start_from = WebDriverWait(driver, TIMEOUT).until(
