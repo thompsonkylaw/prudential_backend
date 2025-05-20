@@ -10,8 +10,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from pydantic import BaseModel
-from urllib.parse import urljoin
-from pdfminer.high_level import extract_text
 import uuid
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -31,11 +29,9 @@ from dotenv import load_dotenv
 import shutil
 import re
 from selenium.webdriver.common.keys import Keys
-from trst import fill_TRST_form
+from gs import fill_GS_form
 from lv import fill_LV_form
 from sc_click import sc_click
-from sc_click_By_Name import sc_click_By_Name
-import pytz
 
 load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -48,7 +44,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to True in production on Railway.app
+IsProduction = False    # Set to True in production on Railway.app
+
 UseGrok = False
 
 # Initialize FastAPI app
@@ -96,7 +93,6 @@ class FormData(BaseModel):
     selectedAge2: int
 
 class LoginRequest(BaseModel):
-    session_id: str
     url: str
     username: str
     password: str
@@ -126,14 +122,6 @@ def log_message(message: str, queue: asyncio.Queue, loop: asyncio.AbstractEventL
         print(message)
     asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
-# New endpoint to initialize a session
-@app.post("/init-session")
-async def init_session():
-    session_id = str(uuid.uuid4())
-    queue = asyncio.Queue()
-    session_queues[session_id] = queue
-    return {"session_id": session_id}
-
 # Selenium worker for initial login and form filling
 def selenium_worker(session_id: str, url: str, username: str, password: str, calculation_data: Dict, cashValueInfo: Dict, formData: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     try:
@@ -142,10 +130,9 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
         options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-        # options.add_argument('--headless')
         prefs = {
             "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": False,
+            "plugins.always_open_pdf_externally": True,
         }
         options.add_experimental_option("prefs", prefs)
 
@@ -159,11 +146,6 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         
         def log_func(message):
             log_message(message, queue, loop)
-        
-        # Initialize session dictionary and set start time
-        sessions[session_id] = {}
-        start_time = time.time()
-        sessions[session_id]['start_time'] = start_time
 
         # Perform initial clicks
         sc_click(driver, log_func, '/html/body/div/header/div[1]/div[1]/div[1]/a[3]', '登入已點選')
@@ -179,13 +161,13 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             EC.presence_of_element_located((By.NAME, "username"))
         )
         login_field.send_keys(username)
-        log_func("使用者名稱已發送")
+        log_message("使用者名稱已發送", queue, loop)
 
         login_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.NAME, "password"))
         )
         login_field.send_keys(password)
-        log_func("密碼已發送")
+        log_message("密碼已發送", queue, loop)
 
         # Submit the form
         sc_click(driver, log_func, '//*[@id="submit"]', '提交已點選')
@@ -198,7 +180,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
 
         # Perform the click that opens the new window
         sc_click(driver, log_func, '//*[@id="wrapper"]/div[2]/div/ul/li[1]/ul/li[11]/div/span', '建議書系統已點選')
-        
+
         # Wait for the new window to open
         WebDriverWait(driver, TIMEOUT).until(
             lambda d: len(d.window_handles) > len(current_handles)
@@ -212,29 +194,36 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
 
         # Switch to the new window
         driver.switch_to.window(new_handle)
-        
+
         # Wait for the button to be clickable and click it
         button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "/html/body/div[2]/div[3]/div/div[3]/div[2]/div/div[1]/button"))
         )
         button.click()
-        log_func("確認 已點選 開始制作建議書打")
+        log_message("Button in new window clicked", queue, loop)
         driver.maximize_window() 
-        
+
         # Fill out basic information
         sureName_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.NAME, "form.fla.surName"))
         )
         sureName_field.clear()
         sureName_field.send_keys(str(formData['surname']))
-        log_func("英文姓氏 已填")
+        log_message("英文姓氏 已填", queue, loop)
 
         givenName_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.NAME, "form.fla.firstName"))
         )
         givenName_field.clear()
         givenName_field.send_keys(str(formData['givenName']))
-        log_func("英文名字 已填")
+        log_message("英文名字 已填", queue, loop)
+
+        # age_field = WebDriverWait(driver, TIMEOUT).until(
+        #     EC.visibility_of_element_located((By.XPATH, '//div[label[contains(text(), "投保年齡")]]//input'))
+        # )
+        # age_field.clear()
+        # age_field.send_keys(str(calculation_data['inputs'].get('age', '')))
+        # log_message(f"投保人年齡 已填={str(calculation_data['inputs'].get('age', ''))}", queue, loop)
 
         if "Female" in formData['gender']:
             sc_click(driver, log_func, '//*[@id="root"]/div/div[3]/div[1]/div[12]/div/div/label[2]/span[2]', '女性已點選')
@@ -246,68 +235,139 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         else:    
             sc_click(driver, log_func, '//*[@id="root"]/div/div[3]/div[1]/div[14]/div/div/label[1]/span[2]', '非吸煙者已點選')
             
+        # Wait for the element to be visible and locate it by name
         age_field = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.NAME, "form.fla.anb"))
         )
         age_field.clear()
         age_value = calculation_data['inputs'].get('age', '')
         age_field.send_keys(str(age_value))  
-        log_func("歲數已填")
-        
-        # Nationality dropdown
+        log_message("歲數已填", queue, loop)
+        ###############################################################################################
+        # Step 1: Locate the dropdown element using By.NAME
         dropdown_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.NAME, "form.fla.nationality"))
         )
+        # Step 2: Click on the dropdown to open it
         try:
             dropdown_element.click() 
-            log_func("成功點選")
+            log_message("成功點選", queue, loop)
+            # Attempt to click the input directly
         except:
-            log_func("國籍已點選")
+            # If direct click fails, find a clickable parent element (adjust XPath as needed)
+            log_message("不成功點選", queue, loop)
             trigger_element = dropdown_element.find_element(By.XPATH, "./parent::div")
             trigger_element.click()
+        # Step 3: Wait for the dropdown options to appear
+        # Adjust the locator based on the actual HTML structure (e.g., class name of the options container)
         options_container = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.CLASS_NAME, "MuiMenu-list"))
         )
+        # Step 4: Select the option containing "香港"
         option = options_container.find_element(By.XPATH, ".//*[contains(text(), '香港')]")
         option.click()
-        log_func("中國香港已點選")
+        log_message("中國香港已點選", queue, loop)
         
-        # Plan selection
-        label = sc_click(driver, log_func, "//label[contains(text(), '請選擇')]", 'basicPlan 已點選')
-        log_func("基本計劃 已點選")
+        # Find the label with text "請選擇"
         label = driver.find_element(By.XPATH, "//label[contains(text(), '請選擇')]")
+        # Scroll the list box into view
         driver.execute_script("arguments[0].scrollIntoView(true);", label)
+        # Get the 'for' attribute, which is the ID of the associated select element
+        time.sleep(1)
         select_id = label.get_attribute("for")
+
+        # Find the select element using the ID
         select_element = driver.find_element(By.ID, select_id)
+
+        # Click the select element to open the dropdown
         select_element.click()
+
+        # Step 3: Wait for the options list to appear (using role="listbox")
+        options_list = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.XPATH, "//ul[@role='listbox']"))
+        )
+
+        # Step 4: Find and click the option with "TRST"
+        option = options_list.find_element(By.XPATH, ".//*[contains(text(), 'TRST')]")
+        option.click()
+        log_message("TRST已點選", queue, loop)    
         
-        basicPlan_ = str(formData['basicPlan'])
-        log_func(f"基本計劃 = {basicPlan_}")    
         
-        if 'TRST' in basicPlan_:
-            fill_TRST_form(driver, formData, calculation_data, log_func, TIMEOUT=120)
-        # else 'ESG ' in basicPlan_:     
-        #     fill_esg_form(driver, formData, calculation_data, log_func, TIMEOUT=120)
-            
+        # Find the label with text "SA"
+        label = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.XPATH, "//label[text()='SA']"))
+        )
+        
+        
+        # Get the 'for' attribute value, which is the id of the associated input
+        driver.execute_script("arguments[0].scrollIntoView(true);", label)
+        # Get the 'for' attribute, which is the ID of the associated select element
+        time.sleep(1)
+        input_id = label.get_attribute("for")
+        # Find the input element using the id
+        input_element = driver.find_element(By.ID, input_id)
+        # Click the input element
+        input_element.clear()
+        input_element.send_keys(str(formData['notionalAmount']))
+       
+        log_message("notionalAmount filled", queue, loop)    
+        
+        #############################################################################################################################
+        sc_click(driver, log_func, "//input[@name='form.benefits.TRST.btpt']/parent::div/div[@role='combobox']", '保費繳付期已點選')
+        
+        # Locate the combobox displaying "3 / @100"
+        
+        combobox = sc_click(driver, log_func, "//input[@name='form.benefits.TRST.btpt']/parent::div/div[@role='combobox']", '2')
+        # combobox = driver.find_element(By.XPATH, "//input[@name='form.benefits.TRST.btpt']/parent::div/div[@role='combobox']")
+        # log_message("2 filled", queue, loop) 
+        # Click the combobox to open the dropdown
+        # combobox.click()
+        # log_message("3 filled", queue, loop) 
+        # Wait for the listbox to become visible (up to 10 seconds)
+        # listbox = WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, "//*[@role='listbox']")))
+        # log_message("4 filled", queue, loop) 
+        # Find and click the option containing "5"
+        combobox = sc_click(driver, log_func, ".//li[@role='option' and contains(text(), '5')]", '3')
+        # option = combobox.find_element(By.XPATH, ".//li[@role='option' and contains(text(), '5')]")
+        # option.click()
+        time.sleep(300)    
+        #############################################################################################################################
+        # # Additional form filling
+        # if formData['isCorporateCustomer']:
+        #     isCorporateCustomer_field = WebDriverWait(driver, TIMEOUT).until(
+        #         EC.presence_of_element_located((By.ID, "mat-mdc-checkbox-1-input"))
+        #     )
+        #     isCorporateCustomer_field.click()
+        #     log_message("已點選 isCorporateCustomer checkbox", queue, loop)
+
+        # if formData['isPolicyHolder']:
+        #     isPolicyHolder_field = WebDriverWait(driver, TIMEOUT).until(
+        #         EC.presence_of_element_located((By.ID, 'mat-radio-5-input'))
+        #     )
+        #     isPolicyHolder_field.click()
+        #     log_message("是保單持有人", queue, loop)
+        # else:
+        #     isPolicyHolder_field = WebDriverWait(driver, TIMEOUT).until(
+        #         EC.presence_of_element_located((By.ID, 'mat-radio-6-input'))
+        #     )
+        #     isPolicyHolder_field.click()
+        #     log_message("不是保單持有人", queue, loop)
+
+        
+
         # Perform checkout
-        result = perform_checkout(driver, formData['notionalAmount'], formData, log_func, calculation_data, cashValueInfo, session_id)
+        result = perform_checkout(driver, formData['notionalAmount'], formData, queue, loop, calculation_data, cashValueInfo, session_id)
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
             session_queues.pop(session_id, None)
             return result
         elif result["status"] == "retry":
-            # Update session data without overwriting start_time
-            sessions[session_id].update({
-                "driver": driver,
-                "form_data": formData,
-                "calculation_data": calculation_data,
-                "cashValueInfo": cashValueInfo
-            })
-            return result
+            sessions[session_id] = {"driver": driver, "form_data": formData, "calculation_data": calculation_data, "cashValueInfo": cashValueInfo}
+            return {"status": "retry", "system_message": result["system_message"]}
 
     except Exception as e:
-        log_func(f"Selenium error: {str(e)}")
+        log_message(f"Selenium error: {str(e)}", queue, loop)
         if session_id in sessions:
             driver = sessions.pop(session_id).get("driver")
             if driver:
@@ -315,165 +375,168 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         raise
 
 # Helper function to perform checkout and capture PDF from network
-def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, calculation_data: Dict, cash_value_info: Dict, session_id: str):
-    age_value = calculation_data['inputs'].get('age', '')
+def perform_checkout(driver, notional_amount: str, form_data: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, calculation_data: Dict, cash_value_info: Dict, session_id: str):
     try:
-        sc_click(driver, log_func, "//button[contains(text(), '預覽「補充說明」')]", '預覽「補充說明」 已點選')
-        time.sleep(3)
+        policy_field = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[7]/span[2]/div'))
+        )
+        policy_field.click()
+        log_message("保費摘要 已點選, 請稍後...", queue, loop)
 
-        class EitherElementVisible:
-            def __init__(self, system_message_locator, iframe_locator):
-                self.system_message_locator = system_message_locator
-                self.iframe_locator = iframe_locator
+        class EitherElementLocated:
+            def __init__(self, locator1, locator2):
+                self.locator1 = locator1
+                self.locator2 = locator2
 
             def __call__(self, driver):
+                system_messages = driver.find_elements(*self.locator1)
+                for msg in system_messages:
+                    if msg.is_displayed() and any(keyword in msg.text for keyword in ["所達年齡", "總每年保費不能少於"]):
+                        return {"type": "system_message", "element": msg}
                 try:
-                    print("Checking for system message")
-                    system_message = driver.find_element(*self.system_message_locator)
-                    print(f"System message found with text: {system_message.text}")
-                    return {"type": "system_message", "element": system_message}
+                    view_element = driver.find_element(*self.locator2)
+                    if view_element.is_displayed():
+                        return {"type": "view_button", "element": view_element}
                 except NoSuchElementException:
-                    print("System message not found")
-                try:
-                    print("Checking for iframe")
-                    iframe = driver.find_element(*self.iframe_locator)
-                    if iframe.is_displayed():
-                        print("Iframe is displayed")
-                        return {"type": "iframe", "element": iframe}
-                    else:
-                        print("Iframe not displayed")
-                except NoSuchElementException:
-                    print("Iframe not found")
+                    pass
                 return False
 
-        system_message_locator = (By.XPATH, "//div[contains(@class, 'MuiAccordion-root') and .//p[contains(text(), '錯誤訊息')]]//div[contains(@class, 'MuiAccordionDetails-root')]//a")
-        iframe_locator = (By.CSS_SELECTOR, "div.MuiGrid2-root iframe")
+        system_message_locator = (By.XPATH, "//div[@class='control-message']//li")
+        view_button_locator = (By.XPATH, "/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/div/div/qq-premium-summary/div/div[3]/button/span[2]")
 
         result = WebDriverWait(driver, 30).until(
-            EitherElementVisible(system_message_locator, iframe_locator)
+            EitherElementLocated(system_message_locator, view_button_locator)
         )
-        
-        cleaned_amount = notional_amount.replace(',', '')
-        integer_part = cleaned_amount.split('.')[0]
-        formatted_amount = f"{int(integer_part):,}"
-        
         basicPlan_ = str(form_data['basicPlan'])
         if result["type"] == "system_message":
             system_message = result["element"].text
-            error_message = system_message.split(":")[1].strip()
-            log_func(f"系統信息: {error_message}")
+            log_message(f"系統信息: {system_message}", queue, loop)
+            cleaned_amount = notional_amount.replace(',', '')
+            integer_part = cleaned_amount.split('.')[0]
+            formatted_amount = f"{int(integer_part):,}"
             return {
                 "status": "retry",
-                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${formatted_amount}",
+                "system_message": f"{system_message}\n 對上一次輸入的名義金額為${formatted_amount}"
             }
-        elif result["type"] == "iframe":
-            iframe = result["element"]
-            log_func("PDF 正在加載...")
-            # Extract the PDF URL from the iframe's src attribute
-            pdf_relative_url = iframe.get_attribute("src").split('#')[0]
-            current_url = driver.current_url
-            pdf_full_url = urljoin(current_url, pdf_relative_url)
-            
-            # Get the current cookies from the Selenium driver
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for cookie in cookies:
-                session.cookies.set(cookie['name'], cookie['value'])
-            headers = {"Referer": current_url}
-            response = session.get(pdf_full_url, headers=headers)
-            response.raise_for_status()
-            pdf_bytes = response.content
-            pdf_file = io.BytesIO(pdf_bytes)
-            text = extract_text(pdf_file)
-            tz_gmt8 = pytz.timezone("Asia/Shanghai")
+        elif result["type"] == "view_button":
+            view_button = result["element"]
+            view_button.click()
+            log_message("名義金額而獲通過", queue, loop)
+            log_message("檢視建議書 已點選", queue, loop)
+
+            save_input_field = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@matinput and @maxlength='80']"))
+            )
+            tz_gmt8 = ZoneInfo("Asia/Shanghai")
             timestamp = datetime.now(tz_gmt8).strftime("%Y%m%d%H%M")
             filename = f"{basicPlan_}_{timestamp}"
-            pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
-            pattern = r"由於所有保單值已被提取，本保單將於第\d+保單年度終結時終止。"
-            matches = re.findall(pattern, text)
-            for match in matches:
-                year_match = re.search(r'第(\d+)保單年度', match)
-                if year_match:
-                    number = int(year_match.group(1))  
-                    ending_age = int(age_value) + number
-                    return {
-                        "status": "retry",
-                        "system_message": f"由於所有保單值已被提取，本保單將於第{number}保單年度(第{ending_age}歲)終止 \n 對上一次輸入的名義金額為${formatted_amount}",
-                        "pdf_base64": pdf_base64,
-                        "filename": filename + ".pdf"
-                    }
-            
-            sc_click(driver, log_func, "//div[div/h5='保費及徵費 -']//button", '核對 已點選')
-            
-            annual_div = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.XPATH, "//p[normalize-space(text())='每年']/.."))
+            save_input_field.clear()
+            save_input_field.send_keys(filename)
+
+            save_button = WebDriverWait(driver, 15).until(
+                EC.element_to_be_clickable((By.XPATH, "//mat-dialog-container//div[@class='dialog-buttons']/button[contains(., '儲存')]"))
             )
-            annual_text = annual_div.text
+            try:
+                save_button.click()
+                log_message("儲存 按鍵 已成功點選", queue, loop)
+            except:
+                ActionChains(driver).move_to_element(save_button).pause(0.5).click().perform()
+                log_message("儲存2 已成功點選", queue, loop)
 
-            # Extract USD and HKD amounts for annual
-            annual_usd = re.search(r'美元\s*([\d,]+\.\d{2})', annual_text).group(1)
-            print("annual_usd", annual_usd)
-            annual_hkd = re.search(r'港元\s*([\d,]+\.\d{2})', annual_text).group(1)
-            print("annual_hkd", annual_hkd)
-            # Locate the div containing the monthly ("每月") information
-            monthly_div = driver.find_element(By.XPATH, "//p[normalize-space(text())='每月']/..")
-            monthly_text = monthly_div.text
+            if str(form_data['proposalLanguage']) == "zh":
+                proposal_language_radio = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
+                )
+                proposal_language_radio.click()
+                log_message(f"建議書語言選擇按鈕 = {str(form_data['proposalLanguage'])}", queue, loop)
+            elif str(form_data['proposalLanguage']) == "sc":
+                proposal_language_radio = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@value='sc']/ancestor::div[contains(@class, 'mdc-radio')]"))
+                )
+                proposal_language_radio.click()
+                log_message(f"建議書語言選擇按鈕 = {str(form_data['proposalLanguage'])}", queue, loop)
+            else:
+                proposal_language_radio = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@value='zh']/ancestor::div[contains(@class, 'mdc-radio')]"))
+                )
+                proposal_language_radio.click()
+                log_message(f"建議書語言選擇按鈕 = {str(form_data['proposalLanguage'])}", queue, loop)
 
-            # Extract USD and HKD amounts for monthly
-            monthly_usd = re.search(r'美元\s*([\d,]+\.\d{2})', monthly_text).group(1)
-            print("monthly_usd", monthly_usd)
-            monthly_hkd = re.search(r'港元\s*([\d,]+\.\d{2})', monthly_text).group(1)
-            print("monthly_hkd", monthly_hkd)
+            label = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//label[.//div[text()='所有年期']]"))
+            )
+            label.click()
+            log_message("所有年期 已成功點選", queue, loop)
+
+            print_button = WebDriverWait(driver, 15).until(
+                EC.element_to_be_clickable((By.XPATH, "//cpos-button[.//span[contains(., '列印建議書')]]//button[contains(@class, 'agent-btn')]"))
+            )
+            try:
+                print_button.click()
+                log_message("列印建議書 按鍵 已成功點選", queue, loop)
+            except:
+                ActionChains(driver).move_to_element_with_offset(print_button, 5, 5).pause(0.3).click().perform()
+                log_message("列印建議書2 按鍵 已成功點選", queue, loop)
             
-            sc_click(driver, log_func, "//button[text()='製作建議書']", '製作建議書 已點選')
-            sc_click(driver, log_func, "//button[text()='檢視建議書']", '檢視建議書 已點選')
+            log_message("列印中, 請稍後..." , queue, loop)
             
-            original_window = driver.current_window_handle
-            WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > 1)
-            all_handles = driver.window_handles
-            pdf_base64 = None
-            pdf_window_handle = None
-            for handle in all_handles:
-                if handle != original_window:
-                    driver.switch_to.window(handle)
-                    current_url = driver.current_url
-                    if current_url.endswith(".pdf"):
-                        pdf_window_handle = handle
-                        # Extract PDF using requests
-                        cookies = driver.get_cookies()
-                        session = requests.Session()
-                        for cookie in cookies:
-                            session.cookies.set(cookie['name'], cookie['value'])
-                        headers = {"Referer": current_url}
-                        response = session.get(current_url, headers=headers)
-                        response.raise_for_status()
-                        pdf_bytes = response.content
-                        pdf_file = io.BytesIO(pdf_bytes)
-                        text = extract_text(pdf_file)
-                        pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
-                        log_func("從PDF檔案中提取文本內容")
-                        break
-            
+            # Wait for PDF response
+            pdf_request_id = None
+            pdf_content = None
+            start_time = time.time()
+            polling_interval = 0.5  # seconds
+
+            while time.time() - start_time < 60:
+                logs = driver.get_log('performance')
+                for log in logs:
+                    message = json.loads(log['message'])['message']
+                    if message['method'] == 'Network.responseReceived':
+                        response = message['params']['response']
+                        if response['mimeType'] == 'application/pdf':
+                            pdf_request_id = message['params']['requestId']
+                    elif message['method'] == 'Network.loadingFinished' and pdf_request_id is not None:
+                        if message['params']['requestId'] == pdf_request_id:
+                            try:
+                                body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': pdf_request_id})
+                                if body['base64Encoded']:
+                                    pdf_content = base64.b64decode(body['body'])
+                                else:
+                                    pdf_content = body['body'].encode()
+                                break
+                            except:
+                                pass  # Continue waiting if getting the body fails
+                if pdf_content:
+                    break
+                time.sleep(polling_interval)
+
+            if pdf_content is None:
+                raise TimeoutException("PDF response not found within timeout")
+            log_message("PDF檔案從計劃書系統獲取中", queue, loop)
+
+            pdf_file = io.BytesIO(pdf_content)
+            with pdfplumber.open(pdf_file) as pdf:
+                text = ""
+                for page in pdf.pages:
+                    text += page.extract_text() or ""
+            log_message("從PDF檔案中提取文本內容", queue, loop)
+
             age_1 = cash_value_info['age_1']
             age_2 = cash_value_info['age_2']
             print("age_1:", age_1)
             print("age_2:", age_2)
-            
-            policy_ending_year_1 = int(age_1) - int(age_value)
-            policy_ending_year_2 = int(age_2) - int(age_value)
-            print("policy_ending_year_1:", policy_ending_year_1)
-            print("policy_ending_year_2:", policy_ending_year_2)
-            log_func(f"基本儲蓄計劃是={basicPlan_}")
             
             currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
             age_1_cash_value = 0
             age_2_cash_value = 0
             annual_premium = 0
             
+            log_message(f"基本儲蓄計劃是={basicPlan_}", queue, loop)
+            
             system_prompt = (
                 f"首先幫我在第1頁的資料表中找出第一項基本計劃的投保時每年保費的數值"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元 **USDxxxxxx** 及 **HKDxxxxxx**"
-                f"但如果計劃是{basicPlan_}幫我在「基本計劃 – 退保價值之説明摘要 」表格中找出{str(policy_ending_year_1)}保單年度終結和{str(policy_ending_year_2)}保單年度終結的「退保價值總額(A) + (B) +(C)」的數值,"
+                f"之後如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(C) + (D)」的數值,"
+                f"但如果計劃是{basicPlan_}幫我在「款項提取說明－退保價值」表格中找出{str(age_1)}歲和{str(age_2)}歲的「款項提取後的退保價值總額(A) + (B) +(C) + (D)」的數值,"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
                 f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
                 f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
@@ -485,19 +548,19 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
             ]
-            log_func(f"AI 解讀計劃書中, 請稍後...")
+            log_message("AI 解讀計劃書中, 請稍後...", queue, loop)
             
             if UseGrok:
                 api_key = GROK2_API_KEY
                 base_url="https://api.x.ai/v1"
                 model = "grok-3-beta"
-                log_func(f"AI模型=X")
+                log_message(f"大模型=X", queue, loop)
             else: 
                 api_key = DEEPSEEK_API_KEY   
                 base_url="https://api.deepseek.com"
                 model = "deepseek-chat"
-                log_func(f"AI模型C使用中")
-                
+                log_message(f"大模型=C", queue, loop)
+            
             client = OpenAI(api_key=api_key, base_url=base_url)
             response = client.chat.completions.create(
                 model=model,
@@ -515,44 +578,39 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
                 age_1_cash_value = int(matches[1].replace(',', ''))
                 age_2_cash_value = int(matches[2].replace(',', ''))
             else:
-                log_func("未能從AI回應中提取足夠的HKD值")
+                log_message("未能從AI回應中提取足夠的HKD值", queue, loop)
                 annual_premium = 0
                 age_1_cash_value = 0
                 age_2_cash_value = 0
                 
-            log_func(f"投保時每年保費={annual_premium}HKD")
-            log_func(f"{age_1}歲退保價值總額={age_1_cash_value}HKD")
-            log_func(f"{age_2}歲退保價值總額={age_2_cash_value}HKD")
+            log_message(f"投保時每年保費={annual_premium}", queue, loop)
+            log_message(f"age_1_退保價值總額={age_1_cash_value}", queue, loop)
+            log_message(f"age_2_退保價值總額={age_2_cash_value}", queue, loop)
             
             lines = ai_response.splitlines()
             for line in lines:
-                log_func(f"AI 回覆 : {line}")
+                log_message(f"AI 回覆 : {line}", queue, loop)
                 
-            # Calculate and log elapsed time
+            log_message("建議書已成功建立及下載到計劃書系統中!", queue, loop)
+
+            # Stop timer and log elapsed time
             end_time = time.time()
-            start_time = sessions[session_id]['start_time']
+            start_time = sessions[session_id]['start_time'] if session_id in sessions else time.time()
             elapsed_time = end_time - start_time
             minutes, seconds = divmod(elapsed_time, 60)
             timer_value = f"{int(minutes):02d}:{int(seconds):02d}"
-            log_func(f"v1.0 所需時間 = {timer_value}")    
-                
-            log_func("建議書已成功建立及下載到計劃書系統中!")
-            
+            log_message(f"所需時間 = {timer_value}", queue, loop)
+
             return {
                 "status": "success",
                 "age_1_cash_value": age_1_cash_value,
                 "age_2_cash_value": age_2_cash_value,
-                "annual_premium": annual_premium,
-                "pdf_base64": pdf_base64,
-                "filename": filename + ".pdf"
+                "annual_premium": annual_premium
             }
 
     except TimeoutException as e:
-        log_func(f"Error: {str(e)}")
+        log_message(f"Error: {str(e)}", queue, loop)
         raise Exception(str(e))
-    except Exception as e:
-        log_func(f"Unexpected error: {str(e)}")
-        raise
 
 # Worker to retry with a new notional amount
 def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
@@ -565,31 +623,21 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
     calculation_data = session_data["calculation_data"]
     cash_value_info = session_data["cashValueInfo"]
 
-    def log_func(message):
-        log_message(message, queue, loop)
-
     try:
-        # Notional amount
-        label = WebDriverWait(driver, 10).until(
-            EC.visibility_of_element_located((By.XPATH, "//label[text()='SA']"))
+        basicPlan_field = WebDriverWait(driver, TIMEOUT).until(
+            EC.element_to_be_clickable((By.XPATH, '/html/body/app-root/qq-base-structure/mat-drawer-container/mat-drawer-content/div/div/div/qq-left-tab/div/button[2]/span[2]/div'))
         )
-        driver.execute_script("arguments[0].scrollIntoView(true);", label)
-        
-        input_id = label.get_attribute("for")
-        input_element = driver.find_element(By.ID, input_id)
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", input_element)
-        
-        time.sleep(2)
-       
-        input_element.click()
-        input_element.send_keys(Keys.CONTROL + 'a')
-        input_element.send_keys(Keys.DELETE)
-        print(new_notional_amount)
-        
-        input_element.send_keys(str(new_notional_amount))
-        log_func("notionalAmount filled")    
-        time.sleep(1)
-        result = perform_checkout(driver, new_notional_amount, form_data, log_func, calculation_data, cash_value_info, session_id)
+        basicPlan_field.click()
+        log_message("基本計劃 page 已點選", queue, loop)
+
+        nominalAmount_field = WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.XPATH, "//label[contains(text(), '名義金額')]/ancestor::qq-notional-amount//input"))
+        )
+        nominalAmount_field.clear()
+        nominalAmount_field.send_keys(new_notional_amount)
+        log_message(f"新的名義金額 已填上 {new_notional_amount}", queue, loop)
+
+        result = perform_checkout(driver, new_notional_amount, form_data, queue, loop, calculation_data, cash_value_info, session_id)
         
         if result["status"] == "success":
             driver.quit()
@@ -598,23 +646,20 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         return result
 
     except Exception as e:
-        log_func(f"Error in retry_notional_worker: {str(e)}")
+        log_message(f"Error in retry_notional_worker: {str(e)}", queue, loop)
         driver.quit()
         sessions.pop(session_id, None)
         session_queues.pop(session_id, None)
         raise
 
-# Modified /login endpoint
+# FastAPI endpoints
 @app.post("/login")
 async def initiate_login(request: LoginRequest):
-    session_id = request.session_id
-    queue = session_queues.get(session_id)
-    if not queue:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session_id = str(uuid.uuid4())
+    queue = asyncio.Queue()
+    session_queues[session_id] = queue
     loop = asyncio.get_running_loop()
     try:
-        def log_func(message):
-            log_message(message, queue, loop)
         result = await run_in_thread(
             selenium_worker,
             session_id,
@@ -628,13 +673,7 @@ async def initiate_login(request: LoginRequest):
             loop
         )
         if result["status"] == "retry":
-            return {
-                "status": "retry",
-                "system_message": result["system_message"],
-                "session_id": session_id,
-                "pdf_base64": result.get("pdf_base64"),
-                "filename": result.get("filename")
-            }
+            return {"status": "retry", "system_message": result["system_message"], "session_id": session_id}
         else:
             return result
     except Exception as e:

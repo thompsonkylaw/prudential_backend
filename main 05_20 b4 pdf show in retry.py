@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 import shutil
 import re
 from selenium.webdriver.common.keys import Keys
-from trst import fill_TRST_form
+from gs import fill_GS_form
 from lv import fill_LV_form
 from sc_click import sc_click
 from sc_click_By_Name import sc_click_By_Name
@@ -48,7 +48,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to True in production on Railway.app
+IsProduction = False  # Set to True in production on Railway.app
 UseGrok = False
 
 # Initialize FastAPI app
@@ -142,7 +142,6 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
         options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-        # options.add_argument('--headless')
         prefs = {
             "download.prompt_for_download": False,
             "plugins.always_open_pdf_externally": False,
@@ -159,11 +158,6 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         
         def log_func(message):
             log_message(message, queue, loop)
-        
-        # Initialize session dictionary and set start time
-        sessions[session_id] = {}
-        start_time = time.time()
-        sessions[session_id]['start_time'] = start_time
 
         # Perform initial clicks
         sc_click(driver, log_func, '/html/body/div/header/div[1]/div[1]/div[1]/a[3]', '登入已點選')
@@ -198,7 +192,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
 
         # Perform the click that opens the new window
         sc_click(driver, log_func, '//*[@id="wrapper"]/div[2]/div/ul/li[1]/ul/li[11]/div/span', '建議書系統已點選')
-        
+
         # Wait for the new window to open
         WebDriverWait(driver, TIMEOUT).until(
             lambda d: len(d.window_handles) > len(current_handles)
@@ -211,16 +205,19 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         new_handle = [handle for handle in all_handles if handle not in current_handles][0]
 
         # Switch to the new window
+        current_handles = driver.window_handles
+        print(f"Current number of window handles: {len(current_handles)}")
         driver.switch_to.window(new_handle)
-        
+        current_handles = driver.window_handles
+        print(f"Current number of window handles: {len(current_handles)}")
         # Wait for the button to be clickable and click it
         button = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, "/html/body/div[2]/div[3]/div/div[3]/div[2]/div/div[1]/button"))
         )
         button.click()
-        log_func("確認 已點選 開始制作建議書打")
+        log_func("Button in new window clicked")
         driver.maximize_window() 
-        
+
         # Fill out basic information
         sureName_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.NAME, "form.fla.surName"))
@@ -253,7 +250,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         age_value = calculation_data['inputs'].get('age', '')
         age_field.send_keys(str(age_value))  
         log_func("歲數已填")
-        
+
         # Nationality dropdown
         dropdown_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.NAME, "form.fla.nationality"))
@@ -262,7 +259,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             dropdown_element.click() 
             log_func("成功點選")
         except:
-            log_func("國籍已點選")
+            log_func("不成功點選")
             trigger_element = dropdown_element.find_element(By.XPATH, "./parent::div")
             trigger_element.click()
         options_container = WebDriverWait(driver, 10).until(
@@ -274,37 +271,91 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         
         # Plan selection
         label = sc_click(driver, log_func, "//label[contains(text(), '請選擇')]", 'basicPlan 已點選')
-        log_func("基本計劃 已點選")
+        
         label = driver.find_element(By.XPATH, "//label[contains(text(), '請選擇')]")
         driver.execute_script("arguments[0].scrollIntoView(true);", label)
         select_id = label.get_attribute("for")
         select_element = driver.find_element(By.ID, select_id)
         select_element.click()
+        log_func("1")
         
+        options_list = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.XPATH, "//ul[@role='listbox']"))
+        )
         basicPlan_ = str(formData['basicPlan'])
-        log_func(f"基本計劃 = {basicPlan_}")    
+        log_func(f"basicPlan = {basicPlan_}")    
         
         if 'TRST' in basicPlan_:
-            fill_TRST_form(driver, formData, calculation_data, log_func, TIMEOUT=120)
-        # else 'ESG ' in basicPlan_:     
-        #     fill_esg_form(driver, formData, calculation_data, log_func, TIMEOUT=120)
+            option = options_list.find_element(By.XPATH, ".//*[contains(text(), 'TRST')]")
+            option.click()
+            log_func("TRST已點選")    
+        
+        # Notional amount
+        label = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.XPATH, "//label[text()='SA']"))
+        )
+        driver.execute_script("arguments[0].scrollIntoView(true);", label)
+        time.sleep(1)
+        input_id = label.get_attribute("for")
+        input_element = driver.find_element(By.ID, input_id)
+        input_element.clear()
+        input_element.send_keys(str(formData['notionalAmount']))
+        log_func("notionalAmount filled")    
+        
+        sc_click(driver, log_func, "//input[@name='form.benefits.TRST.btpt']/parent::div/div[@role='combobox']", '保費繳付期 已點選')
+        
+        number_of_years = str(formData['premiumPaymentPeriod'])
+        log_func(f"number_of_years = {number_of_years}")  
+        useInflation = formData['useInflation']
+        log_func(f"useInflation = {useInflation}")  
+        processedData = calculation_data['processedData']
+        
+        if '5' in number_of_years:
+            sc_click(driver, log_func, ".//li[@role='option' and contains(text(), '5')]", '5 @100')
+        
+        sc_click(driver, log_func, "//button[text()='完整表格加入金額']", '完整表格加入金額 已點選')
+        ##############################################################################################################################
+        time.sleep(3)
+        startYearNumber = str(int(number_of_years) + 1)
+        log_func(f"由(保單年度) = {startYearNumber}")
+        numberOfWithDrawYear = str(100 - int(number_of_years) - int(calculation_data['inputs'].get('age', '')))
+        
+        log_func(f"提取期(年) = {numberOfWithDrawYear}")
+        # if not formData['useInflation']:
+        sorted_data = sorted(calculation_data['processedData'], key=lambda x: x['yearNumber'])
+        start_index = next((i for i, item in enumerate(sorted_data) if item['yearNumber'] == int(startYearNumber)), None)
+        if start_index is None:
+            raise ValueError(f"Start year {startYearNumber} not found in processedData")
+        end_index = start_index + int(numberOfWithDrawYear)
+        withdrawal_data = sorted_data[start_index:end_index]
+        currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
+
+        for idx, entry in enumerate(withdrawal_data):
+            premium = entry['medicalPremium']
+            if "美元" in formData['currency']:
+                premium = round(premium / currency_rate, 0)
+            input_index = int(startYearNumber) + (idx)
+            name = f"form.investments.{input_index}.partialSurrenders"
+            input_element = driver.find_element(By.NAME, name)
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", input_element)
+            input_element.clear()
+            input_element.send_keys(str(int(premium)))
+            log_func(f"已填 翌年歲= {str(int(age_value) + input_index)} 保單年度終結=  {input_index}  現金提取={premium} in and input_index = {input_index}")
+            time.sleep(0.2)
             
+        time.sleep(1)
+        
         # Perform checkout
         result = perform_checkout(driver, formData['notionalAmount'], formData, log_func, calculation_data, cashValueInfo, session_id)
+        print("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy")
         if result["status"] == "success":
             driver.quit()
             sessions.pop(session_id, None)
             session_queues.pop(session_id, None)
             return result
         elif result["status"] == "retry":
-            # Update session data without overwriting start_time
-            sessions[session_id].update({
-                "driver": driver,
-                "form_data": formData,
-                "calculation_data": calculation_data,
-                "cashValueInfo": cashValueInfo
-            })
-            return result
+            sessions[session_id] = {"driver": driver, "form_data": formData, "calculation_data": calculation_data, "cashValueInfo": cashValueInfo}
+            return {"status": "retry", "system_message": result["system_message"]}
 
     except Exception as e:
         log_func(f"Selenium error: {str(e)}")
@@ -346,6 +397,9 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
                     print("Iframe not found")
                 return False
 
+        # system_message_locator = (By.XPATH, "//a[contains(text(), '保誠信守明天多元貨幣計劃 投保額過低')]")
+        
+        # system_message_locator = (By.XPATH, "//a[contains(normalize-space(.), '保誠信守明天多元貨幣計劃 投保額過低')]")
         system_message_locator = (By.XPATH, "//div[contains(@class, 'MuiAccordion-root') and .//p[contains(text(), '錯誤訊息')]]//div[contains(@class, 'MuiAccordionDetails-root')]//a")
         iframe_locator = (By.CSS_SELECTOR, "div.MuiGrid2-root iframe")
 
@@ -359,12 +413,18 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
         
         basicPlan_ = str(form_data['basicPlan'])
         if result["type"] == "system_message":
+            # print("4")
             system_message = result["element"].text
             error_message = system_message.split(":")[1].strip()
             log_func(f"系統信息: {error_message}")
+            # cleaned_amount = notional_amount.replace(',', '')
+            # integer_part = cleaned_amount.split('.')[0]
+            # formatted_amount = f"{int(integer_part):,}"
+            # print("5")
             return {
                 "status": "retry",
                 "system_message": f"{system_message}\n 對上一次輸入的名義金額為${formatted_amount}",
+
             }
         elif result["type"] == "iframe":
             iframe = result["element"]
@@ -388,6 +448,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
             tz_gmt8 = pytz.timezone("Asia/Shanghai")
             timestamp = datetime.now(tz_gmt8).strftime("%Y%m%d%H%M")
             filename = f"{basicPlan_}_{timestamp}"
+            print(text)
             pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
             pattern = r"由於所有保單值已被提取，本保單將於第\d+保單年度終結時終止。"
             matches = re.findall(pattern, text)
@@ -396,47 +457,52 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
                 if year_match:
                     number = int(year_match.group(1))  
                     ending_age = int(age_value) + number
-                    return {
-                        "status": "retry",
-                        "system_message": f"由於所有保單值已被提取，本保單將於第{number}保單年度(第{ending_age}歲)終止 \n 對上一次輸入的名義金額為${formatted_amount}",
-                        "pdf_base64": pdf_base64,
-                        "filename": filename + ".pdf"
-                    }
+                return {
+                    "status": "retry",
+                    "system_message": f"由於所有保單值已被提取，本保單將於第{number}保單年度(第{ending_age}歲)終結時終止 \n 對上一次輸入的名義金額為${formatted_amount}",
+
+                }
             
             sc_click(driver, log_func, "//div[div/h5='保費及徵費 -']//button", '核對 已點選')
+            #################################################################################################
             
             annual_div = WebDriverWait(driver, 10).until(
                 EC.visibility_of_element_located((By.XPATH, "//p[normalize-space(text())='每年']/.."))
             )
+            # annual_div = driver.find_element(By.XPATH, "//p[normalize-space(text())='每年']/..")
             annual_text = annual_div.text
 
             # Extract USD and HKD amounts for annual
             annual_usd = re.search(r'美元\s*([\d,]+\.\d{2})', annual_text).group(1)
-            print("annual_usd", annual_usd)
+            print("annual_usd",annual_usd)
             annual_hkd = re.search(r'港元\s*([\d,]+\.\d{2})', annual_text).group(1)
-            print("annual_hkd", annual_hkd)
+            print("annual_hkd",annual_hkd)
             # Locate the div containing the monthly ("每月") information
             monthly_div = driver.find_element(By.XPATH, "//p[normalize-space(text())='每月']/..")
             monthly_text = monthly_div.text
 
             # Extract USD and HKD amounts for monthly
             monthly_usd = re.search(r'美元\s*([\d,]+\.\d{2})', monthly_text).group(1)
-            print("monthly_usd", monthly_usd)
+            print("monthly_usd",monthly_usd)
             monthly_hkd = re.search(r'港元\s*([\d,]+\.\d{2})', monthly_text).group(1)
-            print("monthly_hkd", monthly_hkd)
+            print("monthly_hkd",monthly_hkd)
             
             sc_click(driver, log_func, "//button[text()='製作建議書']", '製作建議書 已點選')
             sc_click(driver, log_func, "//button[text()='檢視建議書']", '檢視建議書 已點選')
             
+            
             original_window = driver.current_window_handle
             WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > 1)
             all_handles = driver.window_handles
+            print("abc")
             pdf_base64 = None
             pdf_window_handle = None
             for handle in all_handles:
                 if handle != original_window:
                     driver.switch_to.window(handle)
+                    print("handle=",handle)
                     current_url = driver.current_url
+                    print("current_url",current_url)
                     if current_url.endswith(".pdf"):
                         pdf_window_handle = handle
                         # Extract PDF using requests
@@ -448,103 +514,20 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
                         response = session.get(current_url, headers=headers)
                         response.raise_for_status()
                         pdf_bytes = response.content
-                        pdf_file = io.BytesIO(pdf_bytes)
-                        text = extract_text(pdf_file)
                         pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
-                        log_func("從PDF檔案中提取文本內容")
+                        log_func("Proposal PDF extracted and encoded successfully")
                         break
             
-            age_1 = cash_value_info['age_1']
-            age_2 = cash_value_info['age_2']
-            print("age_1:", age_1)
-            print("age_2:", age_2)
+
             
-            policy_ending_year_1 = int(age_1) - int(age_value)
-            policy_ending_year_2 = int(age_2) - int(age_value)
-            print("policy_ending_year_1:", policy_ending_year_1)
-            print("policy_ending_year_2:", policy_ending_year_2)
-            log_func(f"基本儲蓄計劃是={basicPlan_}")
             
-            currency_rate = float(calculation_data['inputs'].get('currencyRate', ''))
-            age_1_cash_value = 0
-            age_2_cash_value = 0
-            annual_premium = 0
-            
-            system_prompt = (
-                f"首先幫我在第1頁的資料表中找出第一項基本計劃的投保時每年保費的數值"
-                f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元 **USDxxxxxx** 及 **HKDxxxxxx**"
-                f"但如果計劃是{basicPlan_}幫我在「基本計劃 – 退保價值之説明摘要 」表格中找出{str(policy_ending_year_1)}保單年度終結和{str(policy_ending_year_2)}保單年度終結的「退保價值總額(A) + (B) +(C)」的數值,"
-                f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
-                f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
-                f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
-                "答案要使用點格式"
-                "數值前面要加上2個*號及HKD, 更加要有','作為貨幣模式"
-                "最后答案用要講出答案是從哪一頁找到"
-            )
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ]
-            log_func(f"AI 解讀計劃書中, 請稍後...")
-            
-            if UseGrok:
-                api_key = GROK2_API_KEY
-                base_url="https://api.x.ai/v1"
-                model = "grok-3-beta"
-                log_func(f"AI模型=X")
-            else: 
-                api_key = DEEPSEEK_API_KEY   
-                base_url="https://api.deepseek.com"
-                model = "deepseek-chat"
-                log_func(f"AI模型C使用中")
-                
-            client = OpenAI(api_key=api_key, base_url=base_url)
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-            ai_response = response.choices[0].message.content
-            
-            print("currency_rate",currency_rate)
-            print("ai_response",ai_response)
-            pattern = r'(?:HK?D?|K)\s*(\d[\d,]*)' 
-            matches = re.findall(pattern, ai_response)
-            
-            if len(matches) >= 3:
-                annual_premium =   int(matches[0].replace(',', ''))
-                age_1_cash_value = int(matches[1].replace(',', ''))
-                age_2_cash_value = int(matches[2].replace(',', ''))
-            else:
-                log_func("未能從AI回應中提取足夠的HKD值")
-                annual_premium = 0
-                age_1_cash_value = 0
-                age_2_cash_value = 0
-                
-            log_func(f"投保時每年保費={annual_premium}HKD")
-            log_func(f"{age_1}歲退保價值總額={age_1_cash_value}HKD")
-            log_func(f"{age_2}歲退保價值總額={age_2_cash_value}HKD")
-            
-            lines = ai_response.splitlines()
-            for line in lines:
-                log_func(f"AI 回覆 : {line}")
-                
-            # Calculate and log elapsed time
-            end_time = time.time()
-            start_time = sessions[session_id]['start_time']
-            elapsed_time = end_time - start_time
-            minutes, seconds = divmod(elapsed_time, 60)
-            timer_value = f"{int(minutes):02d}:{int(seconds):02d}"
-            log_func(f"v1.0 所需時間 = {timer_value}")    
-                
-            log_func("建議書已成功建立及下載到計劃書系統中!")
+
             
             return {
                 "status": "success",
-                "age_1_cash_value": age_1_cash_value,
-                "age_2_cash_value": age_2_cash_value,
-                "annual_premium": annual_premium,
                 "pdf_base64": pdf_base64,
                 "filename": filename + ".pdf"
+                # data as needed
             }
 
     except TimeoutException as e:
@@ -581,15 +564,20 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         
         time.sleep(2)
        
+        # input_element.clear()
         input_element.click()
+
+    # Select all text with Ctrl+A and delete it
         input_element.send_keys(Keys.CONTROL + 'a')
         input_element.send_keys(Keys.DELETE)
         print(new_notional_amount)
+        
         
         input_element.send_keys(str(new_notional_amount))
         log_func("notionalAmount filled")    
         time.sleep(1)
         result = perform_checkout(driver, new_notional_amount, form_data, log_func, calculation_data, cash_value_info, session_id)
+        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         
         if result["status"] == "success":
             driver.quit()
@@ -628,13 +616,7 @@ async def initiate_login(request: LoginRequest):
             loop
         )
         if result["status"] == "retry":
-            return {
-                "status": "retry",
-                "system_message": result["system_message"],
-                "session_id": session_id,
-                "pdf_base64": result.get("pdf_base64"),
-                "filename": result.get("filename")
-            }
+            return {"status": "retry", "system_message": result["system_message"], "session_id": session_id}
         else:
             return result
     except Exception as e:
