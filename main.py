@@ -49,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = False  # Set to True in production on Railway.app
+IsProduction = True  # Set to True in production on Railway.app
 UseGrok = False
 
 # Initialize FastAPI app
