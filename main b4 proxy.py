@@ -142,7 +142,6 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-        options.add_argument("--proxy-server=http://119.28.100.180:11786")
         options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
         # options.add_argument('--headless')
         prefs = {
