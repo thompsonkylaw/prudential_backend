@@ -12,7 +12,9 @@ def fill_TRST_form(driver, formData, calculation_data, log_func, TIMEOUT=120):
             EC.visibility_of_element_located((By.XPATH, "//ul[@role='listbox']"))
         )
     option = options_list.find_element(By.XPATH, ".//*[contains(text(), 'TRST')]")
-    time.sleep(4)
+    option = WebDriverWait(driver, 10).until(
+             EC.element_to_be_clickable((By.XPATH, ".//*[contains(text(), 'TRST')]"))
+        )
     option.click()
     log_func("TRST 已點選")    
     
