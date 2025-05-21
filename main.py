@@ -142,8 +142,9 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-        options.add_argument("--proxy-server=http://119.28.100.180:11786")
+        options.add_argument("--proxy-server=http://43.163.8.134:11837")
         options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+        
         # options.add_argument('--headless')
         prefs = {
             "download.prompt_for_download": False,
@@ -155,13 +156,18 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             options.add_argument('--headless')
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
         else:
-            driver = webdriver.Chrome(options=options)
+            
+            driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
+           
+            # driver = webdriver.Chrome(options=options)
+            
         driver.maximize_window() 
+        print("there")
         driver.get(url)
-        
+        print("here")
         def log_func(message):
             log_message(message, queue, loop)
-        
+       
         # Initialize session dictionary and set start time
         sessions[session_id] = {}
         start_time = time.time()
