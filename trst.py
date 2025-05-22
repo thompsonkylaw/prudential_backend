@@ -7,7 +7,7 @@ from sc_click import sc_click
 
 
 def fill_TRST_form(driver, formData, calculation_data, log_func, TIMEOUT=120):
-    time.sleep(2)
+    time.sleep(4)
     options_list = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.XPATH, "//ul[@role='listbox']"))
         )

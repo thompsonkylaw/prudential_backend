@@ -210,9 +210,9 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             driver = webdriver.Chrome(options=options)
             
         driver.maximize_window() 
-        print("there")
+        # print("there")
         driver.get(url)
-        print("here")
+        # print("here")
         def log_func(message):
             log_message(message, queue, loop)
        
@@ -561,8 +561,8 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
             )
             ai_response = response.choices[0].message.content
             
-            print("currency_rate",currency_rate)
-            print("ai_response",ai_response)
+            # print("currency_rate",currency_rate)
+            # print("ai_response",ai_response)
             pattern = r'(?:HK?D?|K)\s*(\d[\d,]*)' 
             matches = re.findall(pattern, ai_response)
             
