@@ -66,7 +66,13 @@ def fill_TRST_form(driver, formData, calculation_data, log_func, TIMEOUT=120):
             premium = round(premium / currency_rate, 0)
         input_index = int(startYearNumber) + (idx)
         name = f"form.investments.{input_index}.partialSurrenders"
-        input_element = driver.find_element(By.NAME, name)
+        try:
+            input_element = WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.NAME, name))
+            )
+        except TimeoutException:
+            log_func(f"Timeout waiting for element with name {name} after 10 seconds")
+            raise
         driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", input_element)
         input_element.clear()
         input_element.send_keys(str(int(premium)))
