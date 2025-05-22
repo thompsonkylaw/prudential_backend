@@ -12,7 +12,7 @@ def fill_TRST_form(driver, formData, calculation_data, log_func, TIMEOUT=120):
             EC.visibility_of_element_located((By.XPATH, "//ul[@role='listbox']"))
         )
     # driver.execute_script("arguments[0].scrollIntoView(true);", options_list)
-    # driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", options_list)
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", options_list)
     option = options_list.find_element(By.XPATH, ".//*[contains(text(), 'TRST')]")
     # option = WebDriverWait(driver, 10).until(
     #          EC.element_to_be_clickable((By.XPATH, ".//*[contains(text(), 'TRST')]"))
