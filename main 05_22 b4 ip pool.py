@@ -38,7 +38,6 @@ from lv import fill_LV_form
 from sc_click import sc_click
 from sc_click_By_Name import sc_click_By_Name
 import pytz
-import queue
 
 load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -65,15 +64,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Load IPs from ip.json into a thread-safe queue
-with open('ip.json', 'r') as f:
-    ip_data = json.load(f)
-    ip_list = [f"{item['ip']}:{item['port']}" for item in ip_data['data']]
-
-ip_queue = queue.Queue()
-for ip_port in ip_list:
-    ip_queue.put(ip_port)
 
 # Define Pydantic models
 class CalculationData(BaseModel):
@@ -139,29 +129,18 @@ def log_message(message: str, queue: asyncio.Queue, loop: asyncio.AbstractEventL
         print(message)
     asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
-# Function to close session and release resources
-def close_session(session_id):
-    if session_id in sessions:
-        driver = sessions[session_id].get("driver")
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-        if 'ip_port' in sessions[session_id]:
-            ip_queue.put(sessions[session_id]['ip_port'])
-        sessions.pop(session_id, None)
-    if session_id in session_queues:
-        session_queues.pop(session_id, None)
-
 # Session timeout cleanup
 def cleanup_sessions():
     while True:
         current_time = time.time()
-        for session_id in list(sessions.keys()):
-            start_time = sessions[session_id].get("start_time", 0)
+        for session_id, session_data in list(sessions.items()):
+            start_time = session_data.get("start_time", 0)
             if current_time - start_time > SESSION_TIMEOUT:
-                close_session(session_id)
+                driver = session_data.get("driver")
+                if driver:
+                    driver.quit()
+                sessions.pop(session_id, None)
+                session_queues.pop(session_id, None)
         time.sleep(60)  # Check every minute
 
 # Start the cleanup thread
@@ -170,44 +149,15 @@ cleanup_thread.start()
 
 # Cleanup all sessions on process termination
 def cleanup_all_sessions():
-    for session_id in list(sessions.keys()):
-        close_session(session_id)
+    for session_id, session_data in list(sessions.items()):
+        driver = session_data.get("driver")
+        if driver:
+            driver.quit()
+        sessions.pop(session_id, None)
+        session_queues.pop(session_id, None)
 
 atexit.register(cleanup_all_sessions)
 
-class TerminateSessionRequest(BaseModel):
-    session_id: str
-    
-@app.post("/terminate-session")
-async def terminate_session(request: TerminateSessionRequest):
-    print(f"Received terminate request for session: {request.session_id}")
-    print("Current sessions:", list(sessions.keys()))
-    
-    session_data = sessions.get(request.session_id)
-    if session_data:
-        print(f"Session data found: {session_data}")
-        if "driver" in session_data:
-            driver = session_data["driver"]
-            print("Driver object:", driver)
-            try:
-                # Optional: Check driver state (e.g., current URL)
-                print("Driver current URL before quit:", driver.current_url)
-                driver.quit()
-                print(f"Driver quit successfully for session {request.session_id}")
-            except Exception as e:
-                print(f"Error quitting driver for session {request.session_id}: {type(e).__name__} - {str(e)}")
-            finally:
-                sessions.pop(request.session_id, None)
-                session_queues.pop(request.session_id, None)
-                print(f"Cleaned up session {request.session_id}")
-                return {"status": "terminated"}
-        else:
-            print("No driver found in session data")
-            return {"status": "no_driver"}
-    else:
-        print(f"Session {request.session_id} not found")
-        raise HTTPException(status_code=404, detail="Session not found") 
-    
 # New endpoint to initialize a session
 @app.post("/init-session")
 async def init_session():
@@ -216,30 +166,25 @@ async def init_session():
     session_queues[session_id] = queue
     return {"session_id": session_id}
 
+
 # Selenium worker for initial login and form filling
 def selenium_worker(session_id: str, url: str, username: str, password: str, calculation_data: Dict, cashValueInfo: Dict, formData: Dict, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     driver = None
     try:
-        # Assign a unique IP from the queue
-        ip_port = ip_queue.get()
-        sessions[session_id] = {"start_time": time.time(), "ip_port": ip_port}
-
         options = webdriver.ChromeOptions()
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
-        print("ip=",ip_port)
-        options.add_argument(f"--proxy-server=http://{ip_port}")
         options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
         prefs = {
             "download.prompt_for_download": False,
             "plugins.always_open_pdf_externally": False,
         }
-        
         options.add_experimental_option("prefs", prefs)
 
         if IsProduction:
             options.add_argument('--headless')
+            options.add_argument("--proxy-server=http://119.28.100.180:11602")
             driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
         else:
             driver = webdriver.Chrome(options=options)
@@ -250,9 +195,8 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         def log_func(message):
             log_message(message, queue, loop)
 
-        sessions[session_id] = {"driver": driver}
-        print("updated session_id",session_id)
-        print("worker session_data['driver']",sessions[session_id]['driver'])
+        sessions[session_id] = {"start_time": time.time()}
+
         sc_click(driver, log_func, '/html/body/div/header/div[1]/div[1]/div[1]/a[3]', '登入已點選')
         sc_click(driver, log_func, '/html/body/div/header/div[1]/div[5]/div/div[2]/div/a[2]', '理財顧問已點選')
 
@@ -356,7 +300,9 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
 
         result = perform_checkout(driver, formData['notionalAmount'], formData, log_func, calculation_data, cashValueInfo, session_id)
         if result["status"] == "success":
-            close_session(session_id)
+            driver.quit()
+            sessions.pop(session_id, None)
+            session_queues.pop(session_id, None)
             return result
         elif result["status"] == "retry":
             sessions[session_id].update({
@@ -368,8 +314,11 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             return result
 
     except Exception as e:
-        
-        close_session(session_id)
+        log_func(f"Selenium error: {str(e)}")
+        if driver:
+            driver.quit()
+        sessions.pop(session_id, None)
+        session_queues.pop(session_id, None)
         raise
 
 # Helper function to perform checkout and capture PDF from network
@@ -619,12 +568,17 @@ def retry_notional_worker(session_id: str, new_notional_amount: str, queue: asyn
         result = perform_checkout(driver, new_notional_amount, form_data, log_func, calculation_data, cash_value_info, session_id)
 
         if result["status"] == "success":
-            close_session(session_id)
+            driver.quit()
+            sessions.pop(session_id, None)
+            session_queues.pop(session_id, None)
         return result
 
     except Exception as e:
         log_func(f"Error in retry_notional_worker: {str(e)}")
-        close_session(session_id)
+        if driver:
+            driver.quit()
+        sessions.pop(session_id, None)
+        session_queues.pop(session_id, None)
         raise
 
 # Modified /login endpoint
@@ -661,7 +615,6 @@ async def initiate_login(request: LoginRequest):
         else:
             return result
     except Exception as e:
-        close_session(session_id)
         session_queues.pop(session_id, None)
         raise HTTPException(status_code=500, detail=str(e))
 
