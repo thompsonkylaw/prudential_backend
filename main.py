@@ -196,7 +196,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_experimental_option("prefs", prefs)
 
         if IsProduction:
-            options.add_argument('--headless')
+            
             # ip_port = ip_queue.get()
             # print("ip=",ip_port)
             # sessions[session_id] = {"ip_port": ip_port}
@@ -237,25 +237,26 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             EC.presence_of_element_located((By.NAME, "username"))
         )
         login_field.send_keys(username)
-        log_func("使用者名稱已發送")
+        log_func("使用者名稱已填寫")
 
         login_field = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.NAME, "password"))
         )
         login_field.send_keys(password)
-        log_func("密碼已發送")
+        log_func("密碼已填寫")
 
         # Submit the form
         sc_click(driver, log_func, '//*[@id="submit"]', '提交已點選')
         
         try:
+            log_func("等待PRUForce...")
             # Wait for the div with class "title" to be present (up to 10 seconds)
             wait = WebDriverWait(driver, 3)
             title_div = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "title")))
             
             # Get the text content of the div
             title_text = title_div.text
-            
+            log_func(f"標題為'{title_text}'")
             # Check if the text contains "請持續使用"
             if "請持續使用" in title_text:
                 log_func("請先登入PRUForce")
@@ -263,14 +264,14 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
                 raise RuntimeError('請先登入PRUForce')
 
         except TimeoutException:
-            print("Title element not found. Continuing...")
+            log_func("沒有PRUForce, 繼續...")
         except Exception as e:
             print(f"An error occurred: {e}")
             driver.quit()
             raise 
 
 
-        print("Continuing with other tasks...")
+        
 
 
         # Perform additional clicks
