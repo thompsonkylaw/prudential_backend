@@ -272,7 +272,7 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
 
 
         
-
+        time.sleep(2)
 
         # Perform additional clicks
         sc_click(driver, log_func, '//*[@id="wrapper"]/div[2]/div/ul/li[1]/div/span', '營銷系統已點選')
