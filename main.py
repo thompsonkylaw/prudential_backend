@@ -245,6 +245,31 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
 
         # Submit the form
         sc_click(driver, log_func, '//*[@id="submit"]', '提交已點選')
+        
+        try:
+            # Wait for the div with class "title" to be present (up to 10 seconds)
+            wait = WebDriverWait(driver, 3)
+            title_div = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "title")))
+            
+            # Get the text content of the div
+            title_text = title_div.text
+            
+            # Check if the text contains "請持續使用"
+            if "請持續使用" in title_text:
+                log_func("請先登入PRUForce")
+                driver.quit()
+                raise RuntimeError('請先登入PRUForce')
+
+        except TimeoutException:
+            print("Title element not found. Continuing...")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            driver.quit()
+            raise 
+
+
+        print("Continuing with other tasks...")
+
 
         # Perform additional clicks
         sc_click(driver, log_func, '//*[@id="wrapper"]/div[2]/div/ul/li[1]/div/span', '營銷系統已點選')
