@@ -196,14 +196,14 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_experimental_option("prefs", prefs)
 
         if IsProduction:
-            
-            # ip_port = ip_queue.get()
-            # print("ip=",ip_port)
-            # sessions[session_id] = {"ip_port": ip_port}
             options.add_argument('--headless')
-            # options.add_argument(f"--proxy-server=http://{ip_port}")
-            # driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
-            driver = webdriver.Remote(command_executor='http://216.250.97.169:4444', options=options)
+            ip_port = ip_queue.get()
+            print("ip=",ip_port)
+            sessions[session_id] = {"ip_port": ip_port}
+            
+            options.add_argument(f"--proxy-server=http://{ip_port}")
+            driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
+            # driver = webdriver.Remote(command_executor='http://216.250.97.169:4444', options=options)
         else:
             # options.add_argument("--proxy-server=http://43.163.8.134:11837")
             # driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
