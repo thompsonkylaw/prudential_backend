@@ -186,12 +186,13 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument("--disable-gpu")
         
-        options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+        # options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
         
         # options.add_argument('--headless')
         prefs = {
             "download.prompt_for_download": False,
             "plugins.always_open_pdf_externally": False,
+            "profile.managed_default_content_settings.images": 2
         }
         options.add_experimental_option("prefs", prefs)
 
