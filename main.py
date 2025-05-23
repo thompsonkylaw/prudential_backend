@@ -50,8 +50,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment flag
-IsProduction = True  # Set to True in production on Railway.app
-UseGrok = False
+IsProduction = False  # Set to True in production on Railway.app
+UseGrok = True
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -202,12 +202,14 @@ def selenium_worker(session_id: str, url: str, username: str, password: str, cal
             sessions[session_id] = {"ip_port": ip_port}
             options.add_argument('--headless')
             options.add_argument(f"--proxy-server=http://{ip_port}")
-            driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
+            # driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
+            driver = webdriver.Remote(command_executor='http://216.250.97.169', options=options)
         else:
             # options.add_argument("--proxy-server=http://43.163.8.134:11837")
             # driver = webdriver.Remote(command_executor='https://standalone-chrome-production-57ca.up.railway.app', options=options)
-           
-            driver = webdriver.Chrome(options=options)
+            # driver = webdriver.Remote(command_executor='https://selenium-chrome-app.fly.dev', options=options)
+            driver = webdriver.Remote(command_executor='http://216.250.97.169:4444', options=options)
+            # driver = webdriver.Chrome(options=options)
             
         driver.maximize_window() 
         # print("there")
@@ -554,7 +556,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
             system_prompt = (
                 f"首先幫我在第1頁的資料表中找出第一項基本計劃的投保時每年保費的數值"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元 **USDxxxxxx** 及 **HKDxxxxxx**"
-                f"但如果計劃是{basicPlan_}幫我在「基本計劃 – 退保價值之説明摘要 」表格中找出{str(policy_ending_year_1)}保單年度終結和{str(policy_ending_year_2)}保單年度終結的「退保價值總額(A) + (B) +(C)」的數值,"
+                f"再幫我在「基本計劃 – 退保價值之説明摘要 」表格中找出@ANB{str(age_1)}保單年度終結和@ANB{str(age_2)}保單年度終結的「退保價值總額(A) + (B) +(C)」的數值,"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
                 f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
                 f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
@@ -571,12 +573,12 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
             if UseGrok:
                 api_key = GROK2_API_KEY
                 base_url="https://api.x.ai/v1"
-                model = "grok-3-beta"
+                model = "grok-3"
                 log_func(f"AI模型=X")
             else: 
                 api_key = DEEPSEEK_API_KEY   
                 base_url="https://api.deepseek.com"
-                model = "deepseek-chat"
+                model = "deepseek-reasoner"
                 log_func(f"AI模型C使用中")
                 
             client = OpenAI(api_key=api_key, base_url=base_url)
