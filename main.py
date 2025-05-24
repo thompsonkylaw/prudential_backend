@@ -515,7 +515,7 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
             sc_click(driver, log_func, "//button[text()='檢視建議書']", '檢視建議書 已點選')
             
             original_window = driver.current_window_handle
-            WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > 1)
+            WebDriverWait(driver, 30).until(lambda d: len(d.window_handles) > 1)
             all_handles = driver.window_handles
             pdf_base64 = None
             pdf_window_handle = None
@@ -559,10 +559,10 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
             system_prompt = (
                 f"首先幫我在第1頁的資料表中找出第一項基本計劃的投保時每年保費的數值"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元 **USDxxxxxx** 及 **HKDxxxxxx**"
-                f"再幫我在「基本計劃 – 退保價值之説明摘要 」表格中找出@ANB{str(age_1)}保單年度終結和@ANB{str(age_2)}保單年度終結的「退保價值總額(A) + (B) +(C)」的數值,"
+                f"再幫我在「基本計劃 – 退保價值之説明摘要 」表格中找出第{str(policy_ending_year_1)}保單周年終結和第{str(policy_ending_year_2)}保單年度終結的 現金提取後退保價值總額 (A)+(B)+(C)的數值,"
                 f"如果找到的數值是美元,就要使用{currency_rate}匯率轉為港元, 答案就顯示美元及港元"
-                f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**'"
-                f"'{str(age_2)}歲的「款項提取後的退保價值總額是 **USDxxxxxx** 及 **HKDxxxxxx**',"
+                f"答案要儘量簡單直接輸出兩句, 不要隔行:'{str(age_1)}歲 或 第{policy_ending_year_1}保單年度終結的「現金提取後退保價值總是 **USDxxxxxx** 及 **HKDxxxxxx**'"
+                f"'{str(age_2)}歲 或 第{policy_ending_year_2}保單年度終結的「現金提取後退保價值總是 **USDxxxxxx** 及 **HKDxxxxxx**',"
                 "答案要使用點格式"
                 "數值前面要加上2個*號及HKD, 更加要有','作為貨幣模式"
                 "最后答案用要講出答案是從哪一頁找到"
@@ -607,8 +607,8 @@ def perform_checkout(driver, notional_amount: str, form_data: Dict, log_func, ca
                 age_2_cash_value = 0
                 
             log_func(f"投保時每年保費={annual_premium}HKD")
-            log_func(f"{age_1}歲退保價值總額={age_1_cash_value}HKD")
-            log_func(f"{age_2}歲退保價值總額={age_2_cash_value}HKD")
+            log_func(f"{age_1}歲 或 第{policy_ending_year_1}保單年度終結的退保價值總額={age_1_cash_value}HKD")
+            log_func(f"{age_2}歲 或 第{policy_ending_year_2}保單年度終結的退保價值總額{age_2_cash_value}HKD")
             
             lines = ai_response.splitlines()
             for line in lines:
